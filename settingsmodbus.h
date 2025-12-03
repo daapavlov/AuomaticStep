@@ -11,6 +11,8 @@
 #include "settingsdialog.h"
 
 class SettingsDialog;//класс настройки com-порта
+class QModbusClient;
+class QModbusReply;
 
 namespace Ui {
 class SettingsModbus;
@@ -26,7 +28,7 @@ public:
 
     QString GetSettingsDevice_modbusRTU(uint8_t Device, uint16_t *Addr, uint16_t *AddrFirstReg, uint16_t *QuantityReg);
     bool SendData_ModbusRTU();
-    bool AcceptData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr, uint16_t counterAddr, uint16_t *ReceivedData, QString *Message_error);
+    bool AcceptData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr, uint16_t counterAddr, uint16_t *ReceivedData);
 
     struct Device//структура устройства, которое будет в сети модбас
     {
@@ -35,6 +37,8 @@ public:
         uint16_t addres_first_registrs;
         uint16_t quantity_registers;
     };
+
+    QString ErrorMessage="";
 
 private:
     Ui::SettingsModbus *ui;
@@ -47,13 +51,15 @@ private:
 
     QModbusReply *lastRequest = nullptr;
     QModbusClient *modbusDevice = nullptr;
-    SettingsDialog *m_settingsDialog = new SettingsDialog();
+    SettingsDialog *m_settingsDialog = nullptr;
 
     QMessageBox *messageModbus = new QMessageBox();
 
     int i=0;
 
     void ConnectFunction();
+    void onConnectTypeChanged();
+    void onModbusStateChanged(int state);
     QString onReadReady(uint16_t AddressSlave, uint16_t *data);
     QModbusDataUnit writeRequest() const;
 

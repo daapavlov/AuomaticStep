@@ -10,12 +10,11 @@ SettingsModbus::SettingsModbus(QWidget *parent) :
     ui(new Ui::SettingsModbus)
 {
     ui->setupUi(this);
+    m_settingsDialog = new SettingsDialog(this);
     ConnectFunction();
+    onConnectTypeChanged();
     ui->tabWidget_comport->removeTab(1);
     ui->tabWidget_comport->addTab(m_settingsDialog, "Настройки COM порта");
-
-
-
 
 }
 
@@ -27,28 +26,52 @@ bool SettingsModbus::SendData_ModbusRTU()
 {
     return false;
 }
-bool SettingsModbus::AcceptData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr, uint16_t counterAddr, uint16_t *ReceivedData, QString *Message_error)
+bool SettingsModbus::AcceptData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr, uint16_t counterAddr, uint16_t *ReceivedData)
 {
     QDateTime newTime = QDateTime::currentDateTime();
-    QString ErrorReadMessage = "Ошибка при чтении:";
-    QModbusDataUnit readRequest =  QModbusDataUnit(QModbusDataUnit::HoldingRegisters, StartAddr, counterAddr);
-    if (!modbusDevice)
-        return false;
+    QString ErrorReadMessage = "Ошибка при чтении: ";
 
-    if (auto *reply = modbusDevice->sendReadRequest(readRequest, ServerEdit)) {
-        if (!reply->isFinished())
-        {
-            connect(reply, &QModbusReply::finished, this, [&]
-            {
-                *Message_error = newTime.toString("hh:mm:ss ")+ErrorReadMessage+onReadReady((uint16_t)ServerEdit, ReceivedData);
-                emit dataReceived();
-            });
-        }
-        else
-            delete reply; // broadcast replies return immediately
-    } else {
-        *Message_error = newTime.toString("hh:mm:ss ")+ErrorReadMessage+modbusDevice->errorString();
+    if (!modbusDevice)
+    {
+        ErrorMessage = newTime.toString("hh:mm:ss ")+ErrorReadMessage+"Не создан объект";
+        return false;
     }
+
+//    const QModbusDataUnit readRequest =  QModbusDataUnit(QModbusDataUnit::HoldingRegisters, StartAddr, counterAddr);
+    QModbusDataUnit readRequest(QModbusDataUnit::HoldingRegisters, 1, 2);
+    if(!modbusDevice)
+    {
+         ErrorMessage = newTime.toString("hh:mm:ss ")+ErrorReadMessage+ "Не создан сервер!";
+    }
+    if(modbusDevice->state() != QModbusDevice::ConnectedState)
+    {
+        onModbusStateChanged(modbusDevice->state());
+        ErrorMessage = newTime.toString("hh:mm:ss ")+ErrorReadMessage+ "Устройство не подключено!";
+    }
+    if(!modbusDevice->connectDevice())
+    {
+         ErrorMessage = newTime.toString("hh:mm:ss ")+ErrorReadMessage+ "Нет подключения!";
+    }
+
+
+        auto *reply = modbusDevice->sendReadRequest(readRequest, 1);
+
+        if (reply)
+        {
+            if (!reply->isFinished())
+            {
+                connect(reply, &QModbusReply::finished, this, [&]
+                {
+                    ErrorMessage = newTime.toString("hh:mm:ss ")+ErrorReadMessage+onReadReady((uint16_t)ServerEdit, ReceivedData);
+                    emit dataReceived();
+                });
+            }
+            else
+                delete reply; // broadcast replies return immediately
+        } else {
+//            ErrorMessage = newTime.toString("hh:mm:ss ")+ErrorReadMessage+modbusDevice->errorString();
+        }
+
     return true;
 }
 QString SettingsModbus::onReadReady(uint16_t AddressSlave, uint16_t *data)
@@ -78,7 +101,6 @@ QString SettingsModbus::onReadReady(uint16_t AddressSlave, uint16_t *data)
     }
     else
     {
-
         ErrorMessage = tr("Read response error: %1 (code: 0x%2). Address: %3").
                 arg(reply->errorString()).
                 arg(reply->error(), -1, 16).
@@ -98,7 +120,6 @@ void SettingsModbus::SetSettinsModBus()
         QMessageBox::critical(this, "Ошибка", "Настройки не установлены");
         return;
     }
-
     if ((modbusDevice->state() != QModbusDevice::ConnectedState) && (m_settingsDialog->settings().namePort != "Custom"))
     {
         modbusDevice->setConnectionParameter(QModbusDevice::SerialPortNameParameter,
@@ -119,6 +140,10 @@ void SettingsModbus::SetSettinsModBus()
             QMessageBox::information(this, "Успешно!", "Настройки установлены");
             emit SettingAreSet();//Сигнал для закрытия настроек
         }
+        else
+        {
+            QMessageBox::critical(this, "Ошибка", "Отказано в досупе");
+        }
     }
     else
     {
@@ -131,10 +156,12 @@ void SettingsModbus::ConnectFunction()
 {
 
     connect(m_settingsDialog, &SettingsDialog::ClickedSaveButton, this, &SettingsModbus::SetSettinsModBus);
+//    onConnectTypeChanged();
     connect(this, &SettingsModbus::SettingAreSet, [this]()
     {
         this->close();
     });
+
     connect(ui->pushButton_addDevice, &QPushButton::clicked, [this]()
     {
         if(i>=0 && i<255)
@@ -155,6 +182,47 @@ void SettingsModbus::ConnectFunction()
        }
 
     });
+}
+void SettingsModbus::onConnectTypeChanged()
+{
+    if (modbusDevice) {
+        modbusDevice->disconnectDevice();
+        delete modbusDevice;
+        modbusDevice = nullptr;
+    }
+    modbusDevice = new QModbusRtuSerialMaster(this);
+
+    connect(modbusDevice, &QModbusClient::errorOccurred, [this](QModbusDevice::Error) {
+        QDateTime newTime = QDateTime::currentDateTime();
+        ErrorMessage = QString("%1%2").arg(newTime.toString("hh:mm:ss: ")).arg(modbusDevice->errorString());
+    });
+
+    if (!modbusDevice) {
+        QDateTime newTime = QDateTime::currentDateTime();
+        ErrorMessage = QString("%1Could not create Modbus master.").arg(newTime.toString("hh:mm:ss: ")).arg(modbusDevice->errorString());
+
+    } else {
+        ErrorMessage = "dd";
+        connect(modbusDevice, &QModbusClient::stateChanged,
+                this, &SettingsModbus::onModbusStateChanged);
+    }
+}
+void SettingsModbus::onModbusStateChanged(int state)
+{
+//    bool connected = (state != QModbusDevice::UnconnectedState);
+//    ui->actionConnect->setEnabled(!connected);
+//    ui->actionDisconnect->setEnabled(connected);
+
+    if (state == QModbusDevice::UnconnectedState)
+    {
+
+    }
+//        ui->connectButton->setText(tr("Подключить"));
+    else if (state == QModbusDevice::ConnectedState)
+    {
+
+    }
+//        ui->connectButton->setText(tr("Отключить"));
 }
 QString SettingsModbus::GetSettingsDevice_modbusRTU(uint8_t Device, uint16_t *Addr, uint16_t *AddrFirstReg, uint16_t *QuantityReg)
 {

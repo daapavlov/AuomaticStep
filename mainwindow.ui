@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1290</width>
-    <height>614</height>
+    <width>1308</width>
+    <height>769</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -34,7 +34,7 @@
            <x>0</x>
            <y>0</y>
            <width>778</width>
-           <height>398</height>
+           <height>650</height>
           </rect>
          </property>
         </widget>
@@ -80,7 +80,7 @@
              <x>0</x>
              <y>0</y>
              <width>498</width>
-             <height>194</height>
+             <height>320</height>
             </rect>
            </property>
            <layout class="QVBoxLayout" name="verticalLayout">
@@ -188,6 +188,13 @@
                <number>6</number>
               </property>
               <item>
+               <widget class="QPushButton" name="pushButton_start">
+                <property name="text">
+                 <string>Запустить</string>
+                </property>
+               </widget>
+              </item>
+              <item>
                <spacer name="horizontalSpacer">
                 <property name="orientation">
                  <enum>Qt::Horizontal</enum>
@@ -199,6 +206,13 @@
                  </size>
                 </property>
                </spacer>
+              </item>
+              <item>
+               <widget class="QPushButton" name="pushButton_writePoints">
+                <property name="text">
+                 <string>Записать точки</string>
+                </property>
+               </widget>
               </item>
               <item>
                <widget class="QPushButton" name="pushButton_AddPoint">
@@ -241,19 +255,6 @@
      </layout>
     </item>
     <item>
-     <spacer name="verticalSpacer_2">
-      <property name="orientation">
-       <enum>Qt::Vertical</enum>
-      </property>
-      <property name="sizeHint" stdset="0">
-       <size>
-        <width>20</width>
-        <height>40</height>
-       </size>
-      </property>
-     </spacer>
-    </item>
-    <item>
      <widget class="QPlainTextEdit" name="plainTextEdit_status">
       <property name="maximumSize">
        <size>
@@ -270,7 +271,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1290</width>
+     <width>1308</width>
      <height>21</height>
     </rect>
    </property>

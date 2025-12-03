@@ -14,100 +14,213 @@ MainWindow::MainWindow(QWidget *parent)
     ui->setupUi(this);
     showMaximized();
 
-
+    AddPlotToWindow(m_customPlot);
     WindowSpecifyingPoints();//Функция создает в панели задания режимов начальную точку
-    WindowChartCreate();//Функция добавляет начальный график на окно
+    setupNearestPointTracking();
     connect(ui->actionModBus_RTU, &QAction::triggered, ad_settings_modbus, &SettingsModbus::show);
-    CreateNewLineSeries(1);
-    CreateNewLineSeries(1);
+
+    connect(ui->pushButton_writePoints, &QPushButton::clicked, this, &MainWindow::AddPointToChrts);
+
+    connect(ui->pushButton_start, &QPushButton::clicked, [this]()
+    {
+       m_settingsModbus->AcceptData_ModbusRTU(1, 1, 1, Modbus_Data);
+       ui->plainTextEdit_status->setPlainText(ErrorModBus);
+       ui->plainTextEdit_status->setPlainText(m_settingsModbus->ErrorMessage);
+    });
+
+
 }
+
 
 MainWindow::~MainWindow()
 {
     delete ui;
 }
-void MainWindow::WindowChartCreate()
+void MainWindow::setupNearestPointTracking()
 {
-    ui->scrollArea_charts->setWidget(m_chartView);
-    m_chartView->setChart(m_chart);
+    m_customPlot->setMouseTracking(true);
 
-    m_axisX->setLabelFormat("%.2f");
-    m_axisX->setTitleText("Время, мин");
-    m_axisX->setGridLineVisible(true);
-    m_axisX->setTickCount(1);
-    m_axisX->setRange(0,30);
-    m_chart->addAxis(m_axisX, Qt::AlignBottom);
+    // Создаем точку для отображения
+    m_hoverPoint = new QCPItemEllipse(m_customPlot);
+    m_hoverPoint->setPen(QPen(Qt::green, 2));
+    m_hoverPoint->setBrush(QBrush(QColor(255, 0, 0, 100)));
+    m_hoverPoint->topLeft->setType(QCPItemPosition::ptAbsolute);
+    m_hoverPoint->bottomRight->setType(QCPItemPosition::ptAbsolute);
+    m_hoverPoint->setVisible(false);
 
-    m_axisY->setLabelFormat("%d");
-    m_axisY->setTitleText("РУД, %");
-    m_axisY->setGridLineVisible(true);
-    m_axisY->setTickCount(1);
-    m_axisY->setRange(0,100);
-    m_chart->addAxis(m_axisY, Qt::AlignLeft);
+    // Текст с информацией
+     m_hoverText = new QCPItemText(m_customPlot);
+     m_hoverText->setPositionAlignment(Qt::AlignTop | Qt::AlignRight);
+     m_hoverText->position->setType(QCPItemPosition::ptAxisRectRatio);
+     m_hoverText->position->setCoords(0.98, 0.02);
+     m_hoverText->setText("Наведите на график");
+     m_hoverText->setTextAlignment(Qt::AlignRight);
+     m_hoverText->setFont(QFont(font().family(), 9));
+     m_hoverText->setBrush(QBrush(QColor(255, 255, 255, 200)));
+     m_hoverText->setPen(QPen(Qt::black));
+
+    connect(m_customPlot, &QCustomPlot::mouseMove, this, &MainWindow::onMouseMoveNearestPoint);
 }
-void MainWindow::FillingSeries(QLineSeries *series, double meaning_OX_start, double meaning_OX_finish,int d_meaning_OY)
-{
 
-    double X_start=0;
-    double X_finish=0;
-    double quantityPoints = (meaning_OX_finish-meaning_OX_start);
-    if(quantityPoints<5)
-    {
-        X_start = meaning_OX_start*60;
-        X_finish = meaning_OX_finish*60;
-        double i=X_start;
-        while(i<X_start+quantityPoints*60)
-        {
-            series->append(double(i/60), d_meaning_OY);//в минутах
-            i+=0.1f;
+void MainWindow::onMouseMoveNearestPoint(QMouseEvent* event)
+{
+    if (m_customPlot->graphCount() == 0) return;
+
+    double x = m_customPlot->xAxis->pixelToCoord(event->pos().x());
+//    double y = m_customPlot->yAxis->pixelToCoord(event->pos().y());
+
+    // Ищем ближайшую точку данных
+    QCPGraph* graph = m_customPlot->graph(0);
+    double minDistance = std::numeric_limits<double>::max();
+    QCPGraphDataContainer::const_iterator closestPoint = graph->data()->constEnd();
+
+    for (auto it = graph->data()->constBegin(); it != graph->data()->constEnd(); ++it) {
+        double distance = qAbs(it->key - x);
+        if (distance < minDistance) {
+            minDistance = distance;
+            closestPoint = it;
         }
     }
-    else
-    {
-        X_start = meaning_OX_start;
-        X_finish = meaning_OX_finish;
-        double i=X_start;
-        while(i<X_start+quantityPoints)
-        {
-            series->append(double(i), d_meaning_OY);//в минутах
-            i+=1.f;
-        }
+
+    if (closestPoint != graph->data()->constEnd()) {
+        // Обновляем позицию точки
+        double pointSize = 8;
+
+         m_hoverPoint->topLeft->setCoords(
+            m_customPlot->xAxis->coordToPixel(closestPoint->key) - pointSize/2,
+            m_customPlot->yAxis->coordToPixel(closestPoint->value) - pointSize/2
+        );
+         m_hoverPoint->bottomRight->setCoords(
+            m_customPlot->xAxis->coordToPixel(closestPoint->key) + pointSize/2,
+            m_customPlot->yAxis->coordToPixel(closestPoint->value) + pointSize/2
+        );
+
+         m_hoverPoint->setVisible(true);
+
+        // Обновляем текст
+         m_hoverText->setText(
+            QString("РУД: %2\n Время %1")
+                .arg(closestPoint->key, 0, 'f', 3)
+                .arg(closestPoint->value, 0, 'f', 3)
+                //.arg(minDistance, 0, 'f', 3)
+        );
+    } else {
+         m_hoverPoint->setVisible(false);
+         m_hoverText->setText("Наведите на график");
     }
-    if (series && !(m_chart->series().contains(series)))
+
+    m_customPlot->replot();
+}
+void MainWindow::AddPlotToWindow(QCustomPlot *custom_plot)
+{
+    ui->scrollArea_charts->setWidget(custom_plot);
+    custom_plot->addGraph();
+    custom_plot->yAxis->setRange(0, 50);
+    custom_plot->xAxis->setRange(0, 50);
+    custom_plot->graph(0)->setName("График ресурсных испытаний");
+    custom_plot->graph(0)->setPen((QPen(Qt::black, 4)));
+
+
+    // Включаем взаимодействие с мышью
+    custom_plot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
+
+    // Настраиваем оси для масштабирования и перемещения
+    custom_plot->axisRect()->setRangeDrag(Qt::Horizontal | Qt::Vertical);
+    custom_plot->axisRect()->setRangeZoom(Qt::Horizontal | Qt::Vertical);
+
+    // Плавное масштабирование к курсору мыши
+    custom_plot->setSelectionTolerance(10); // Чувствительность выделения
+}
+void MainWindow::AddNewDataPointrChart(QCustomPlot *custom_plot, QVector<double> DataX, QVector <double> DataY)
+{
+    /*Добавляем точки на график и устанавливаем оси*/
+    if(!DataX.isEmpty() && !DataY.isEmpty())
     {
-        m_chart->addSeries(series);
-        series->attachAxis(m_axisX);
-        series->attachAxis(m_axisY);
+        custom_plot->graph(0)->setData(DataX, DataY);
+        custom_plot->yAxis->setRange(0, 100);
+        custom_plot->xAxis->setRange(DataX.at(0), DataX.back());
+        custom_plot->replot();
     }
-    m_chart->update();
 
 }
-
-void MainWindow::CreateNewLineSeries(int NumberLineSeries)
+void MainWindow::RemoveDataPointChart(QCustomPlot *custom_plot)
 {
-    QLineSeries *newLineSeries = new QLineSeries();
-    QString string_lineSeries = LineSeries_objName + QString("%1").arg(NumberLineSeries);
-    newLineSeries->setObjectName(string_lineSeries);
-    if(!m_allSeries.contains(string_lineSeries))
+    /*Удаляем данные с графика*/
+    if (custom_plot->graphCount() > 0)
     {
-        m_allSeries[string_lineSeries] = newLineSeries;
+        custom_plot->graph(0)->data()->clear();
+        custom_plot->replot();
     }
-
 }
-void MainWindow::RemoveNewLineSeries(int NumberLineSeries)
+void MainWindow::GetParametrToForms(PointMode *structure, uint16_t NumberPoint)
 {
-    QString string_lineSeries = LineSeries_objName+QString("%1").arg(NumberLineSeries);
-    if (m_allSeries.contains(string_lineSeries))
+    /*функция читает параметры с формы задания режимов*/
+    QString string_1 = newSpinBoxTime_objName+QString("%1").arg(NumberPoint);
+    QDoubleSpinBox *SpinBox_0 = findChild<QDoubleSpinBox *>(string_1);
+    if(SpinBox_0!=nullptr)
+        structure->Time = SpinBox_0->value();
+
+    QString string_2 = newSpinBoxRUD_objName+QString("%1").arg(NumberPoint);
+    QSpinBox *SpinBox_1 = findChild<QSpinBox *>(string_2);
+    if(SpinBox_1!=nullptr)
+        structure->RUD = SpinBox_1->value();
+
+    QString string_3 = newSpinBoxPower_objName+QString("%1").arg(NumberPoint);
+    QDoubleSpinBox *SpinBox_2 = findChild<QDoubleSpinBox *>(string_3);
+    if(SpinBox_2!=nullptr)
+        structure->PowerDVS = SpinBox_2->value();
+
+    QString string_4 = newLineEditNameMode_objName+QString("%1").arg(NumberPoint);
+    QLineEdit *LineEdit_0 = findChild<QLineEdit *>(string_4);
+    if(LineEdit_0!=nullptr)
+        structure->NameMode = LineEdit_0->text();
+}
+void MainWindow::ClearParametrStruct(PointMode *structure)
+{
+    /*Функция очищает т-элеент структуры*/
+    structure->RUD = 0;
+    structure->Time = 0;
+    structure->PowerDVS = 0;
+    structure->NameMode = "Не задан";
+}
+void MainWindow::AddPointToChrts()
+{
+    /*Функция записывает на график заново точки, перед этим очищает вектора*/
+    DataChartX.clear();
+    DataChartY.clear();
+    RemoveDataPointChart(m_customPlot);
+    int i=0;
+    while(i<NumberPointMode)
     {
-        // Удаляем из QHash
-        m_allSeries.remove(string_lineSeries);
-        m_chart->removeAllSeries();
+        GetParametrToForms(&ArrayPoint[i], i);
+        SplittingIntoDots(ArrayPoint[i], &DataChartX, &DataChartY);
+        i++;
+    }
+    AddNewDataPointrChart(m_customPlot, DataChartX, DataChartY);
+}
+void MainWindow::SplittingIntoDots(PointMode structure_1, QVector<double> *vector1, QVector<double> *vector2)
+{
+    /*функция добавляет заполняет вектора точками*/
+    double Min=0;
+    if(!vector1->isEmpty())
+    {
+        Min = vector1->back();
     }
 
+    double MinRange_OX = Min*60.0f;//в секундах
+    double Range_OX = (structure_1.Time)*60.0f;//в секундах
+    double Rud = structure_1.RUD;
+    for(double i=MinRange_OX; i<(MinRange_OX+Range_OX)+1.0f; i+=1.0f)
+    {
+        vector1->append(i/60.0f);//чтобы отображать точки на графике в минутах
+        vector2->append(Rud);
+    }
 }
 void MainWindow::WindowSpecifyingPoints()
 {
+    /*Начальная инициализация*/
     AddNewPoint(0);
+//    GetParametrToForms(&ArrayPoint[0], 0);
     ui->pushButton_RemovePoint->setEnabled(false);
 
     connect(ui->pushButton_AddPoint, &QPushButton::clicked, [this]()
@@ -117,22 +230,11 @@ void MainWindow::WindowSpecifyingPoints()
         {
             AddNewPoint(NumberPointMode);
             ui->pushButton_RemovePoint->setEnabled(true);
+            GetParametrToForms(&ArrayPoint[NumberPointMode], NumberPointMode);
             NumberPointMode++;
         }
         QScrollBar* verticalBar = ui->scrollArea->verticalScrollBar();
         verticalBar->setValue(verticalBar->maximum()+verticalBar->pageStep());//Опускаем вертикальный скрол вниз
-
-        QString string_lineSeries = LineSeries_objName + QString("%1").arg(1);
-        FillingSeries(m_allSeries.value(string_lineSeries, nullptr), 0.f,  0.25f,10);
-
-        string_lineSeries = LineSeries_objName + QString("%1").arg(1);
-        FillingSeries(m_allSeries.value(string_lineSeries, nullptr), 0.25f,  0.95f,70);
-
-        string_lineSeries = LineSeries_objName + QString("%1").arg(1);
-        FillingSeries(m_allSeries.value(string_lineSeries, nullptr), 0.95f,  1.95f,5);
-
-        string_lineSeries = LineSeries_objName + QString("%1").arg(1);
-        FillingSeries(m_allSeries.value(string_lineSeries, nullptr), 1.95f, 30.0f,50);
 
     });
 
@@ -146,10 +248,10 @@ void MainWindow::WindowSpecifyingPoints()
             if(NumberPointMode<=1)
             {
                 NumberPointMode=1;
+                ClearParametrStruct(&ArrayPoint[NumberPointMode]);
                 ui->pushButton_RemovePoint->setEnabled(false);
             }
         }
-    RemoveNewLineSeries(1);
     });
 }
 void MainWindow::RemoveNewPoint(uint16_t NumberPoint)
@@ -215,6 +317,7 @@ void MainWindow::AddNewPoint(uint16_t NumberPoint)
     newSpinBoxTime->setObjectName(string_spinBoxID);
     newSpinBoxTime->setMinimumSize(100,20);
     newSpinBoxTime->setSuffix(" мин");
+    newSpinBoxTime->setRange(0.f, 1500.f);
     ui->gridLayout_manual->addWidget(newSpinBoxTime, Row, spinBoxTime_column);
 
     QSpinBox *newSpinBoxRUD = new QSpinBox();//создаем объект указывающий на адрес слейва
@@ -222,14 +325,16 @@ void MainWindow::AddNewPoint(uint16_t NumberPoint)
     newSpinBoxRUD->setObjectName(string_spinBoxRUD);
     newSpinBoxRUD->setMinimumSize(80,20);
     newSpinBoxRUD->setRange(0, 100);
+    newSpinBoxRUD->setSuffix(" %");
     ui->gridLayout_manual->addWidget(newSpinBoxRUD, Row, spinBoxRUD_column);
 
     QDoubleSpinBox *newSpinBoxPower = new QDoubleSpinBox();//создаем объект указывающий на адрес слейва
     QString string_spinBoxPower = newSpinBoxPower_objName+QString("%1").arg(NumberPoint);
     newSpinBoxPower->setObjectName(string_spinBoxPower);
     newSpinBoxPower->setMinimumSize(80,20);
-    newSpinBoxPower->setRange(0, 200);
+    newSpinBoxPower->setRange(0, 1000);
     newSpinBoxPower->setPrefix(">");
+    newSpinBoxPower->setSuffix(" ЛС");
     ui->gridLayout_manual->addWidget(newSpinBoxPower, Row, spinBoxPower_column);
 
     QLineEdit *newLineEditNameMode = new QLineEdit();

@@ -4,15 +4,12 @@
 #include <QMainWindow>
 
 #include "settingsmodbus.h"
-#include <QtCharts/QChartView>
-#include <QtCharts/QLineSeries>
-#include <QtCharts/QChart>
-#include <QValueAxis>
-QT_BEGIN_NAMESPACE
-QT_CHARTS_USE_NAMESPACE
+#include "qcustomplot.h"
 
-class QModbusClient;
-class QModbusReply;
+#include <QMouseEvent>
+
+QT_BEGIN_NAMESPACE
+
 
 class SettingsModbus;
 namespace Ui { class MainWindow; }
@@ -32,12 +29,21 @@ private:
     Ui::MainWindow *ui;
     SettingsModbus *ad_settings_modbus = new SettingsModbus();
 
-    QChartView *m_chartView  = new QChartView();
-    QChart *m_chart = new QChart();
-    QValueAxis *m_axisX = new QValueAxis;
-    QValueAxis *m_axisY = new QValueAxis;
+    QCustomPlot *m_customPlot = new QCustomPlot();
+    QVector <double>  DataChartX, DataChartY;
+    // Элементы для отображения при наведении
+    QCPItemEllipse* m_hoverPoint;
+    QCPItemText* m_hoverText;
 
     uint16_t NumberPointMode=1;
+    struct PointMode
+    {
+        uint8_t RUD=0;
+        double Time=0;
+        double PowerDVS=0;
+        QString NameMode;
+    };
+    PointMode ArrayPoint[100];
 
     //Названия объектов в панели управления РУД
     QString newLabelNumberPoint_objName = "label_numberPoint_";
@@ -47,16 +53,25 @@ private:
     QString newLineEditNameMode_objName = "lineEditNameMode_";
     QString newLabelStatus_objName = "label_status_";
 
-    QString LineSeries_objName = "lineSeries_";
-    QHash<QString, QLineSeries*> m_allSeries; // Все созданные series
 
+    SettingsModbus *m_settingsModbus = new SettingsModbus();
+    uint16_t *Modbus_Data;
+    QString ErrorModBus;
 
     void AddNewPoint(uint16_t NumberPoint);
     void RemoveNewPoint(uint16_t NumberPoint);
     void WindowSpecifyingPoints();
-    void WindowChartCreate();
-    void CreateNewLineSeries(int NumberLineSeries);
-    void RemoveNewLineSeries(int NumberLineSeries);
-    void FillingSeries(QLineSeries *series, double meaning_OX_start, double meaning_OX_finish,int d_meaning_OY);
+    void GetParametrToForms(PointMode *structure, uint16_t NumberPoint);
+    void ClearParametrStruct(PointMode *structure);
+    void SplittingIntoDots(PointMode structure_1, QVector<double> *vector1, QVector<double> *vector2);
+
+    void AddPlotToWindow(QCustomPlot *custom_plot);
+    void AddNewDataPointrChart(QCustomPlot *custom_plot, QVector<double> DataX, QVector <double> DataY);
+    void RemoveDataPointChart(QCustomPlot *custom_plot);
+    void setupNearestPointTracking();
+    void onMouseMoveNearestPoint(QMouseEvent* event);
+
+private slots:
+    void AddPointToChrts();
 };
 #endif // MAINWINDOW_H

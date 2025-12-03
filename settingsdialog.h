@@ -86,12 +86,13 @@ public:
     ~SettingsDialog();
 
     Settings settings() const;
+    Settings m_settings;
     void SettingPortName();
 
 signals:
     void ClickedSaveButton();
 private:
-    Settings m_settings;
+//    Settings m_settings;
     Ui::SettingsDialog *ui;
 };
 
