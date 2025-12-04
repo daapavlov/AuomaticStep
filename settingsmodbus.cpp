@@ -12,7 +12,6 @@ SettingsModbus::SettingsModbus(QWidget *parent) :
     ui->setupUi(this);
     m_settingsDialog = new SettingsDialog(this);
     ConnectFunction();
-    onConnectTypeChanged();
     ui->tabWidget_comport->removeTab(1);
     ui->tabWidget_comport->addTab(m_settingsDialog, "Настройки COM порта");
 
@@ -22,102 +21,149 @@ SettingsModbus::~SettingsModbus()
 {
     delete ui;
 }
-bool SettingsModbus::SendData_ModbusRTU()
+bool SettingsModbus::SendData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr,QVector <uint16_t> Data)
 {
+    /*функция отправки данных в слейв
+    * ServerEdit - адрес слейва
+    * StartAddr - начальный регистр
+    * Data - вектор с данными
+    * Количество регистров, которые заполняются равно размеру вектора Data
+    */
+    QDateTime newTime = QDateTime::currentDateTime();
+    QString ErrorWriteMessage = "Ошибка при передаче: ";
+    if (!modbusDevice)
+        return false;
+
+    QModbusDataUnit writeUnit = QModbusDataUnit(QModbusDataUnit::HoldingRegisters, StartAddr, Data.size());
+    writeUnit.setValueCount(Data.size());
+    for (int i = 0, total = int(writeUnit.valueCount()); i < total; ++i)
+    {
+            writeUnit.setValue(i, Data.at(i));
+    }
+
+    if (auto *reply = modbusDevice->sendWriteRequest(writeUnit, ServerEdit)) {
+        if (!reply->isFinished()) {
+            connect(reply, &QModbusReply::finished, this, [this, reply, ErrorWriteMessage, newTime, ServerEdit]() {
+                if (reply->error() == QModbusDevice::ProtocolError) {
+                    ErrorMessage_transmission = newTime.toString("hh:mm:ss ")+ErrorWriteMessage+QString(tr("%1 (Mobus exception: 0x%2)")
+                                                                         .arg(reply->errorString()).arg(reply->rawResult().exceptionCode()));
+                } else if (reply->error() != QModbusDevice::NoError) {
+                    ErrorMessage_transmission = newTime.toString("hh:mm:ss ")+ErrorWriteMessage+QString(tr("Write response error: %1 (code: 0x%2). Address: %3").
+                        arg(reply->errorString()).arg(reply->error()).arg(ServerEdit));
+                }
+                else
+                {
+                    ErrorMessage_transmission = "";
+                }
+                reply->deleteLater();
+            });
+        } else {
+            // broadcast replies return immediately
+            reply->deleteLater();
+        }
+    } else {
+        ErrorMessage_transmission = newTime.toString("hh:mm:ss ")+ErrorWriteMessage+modbusDevice->errorString();
+    }
     return false;
 }
-bool SettingsModbus::AcceptData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr, uint16_t counterAddr, uint16_t *ReceivedData)
+bool SettingsModbus::AcceptData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr, uint16_t counterAddr)
 {
+    /*функция получения данных в слейв
+    * ServerEdit - адрес слейва
+    * StartAddr - начальный регистр
+    * counterAddr - колмчество регистров для чтения
+    */
     QDateTime newTime = QDateTime::currentDateTime();
     QString ErrorReadMessage = "Ошибка при чтении: ";
 
     if (!modbusDevice)
     {
-        ErrorMessage = newTime.toString("hh:mm:ss ")+ErrorReadMessage+"Не создан объект";
+        ErrorMessage_receive = newTime.toString("hh:mm:ss ")+ErrorReadMessage+"Не создан объект";
         return false;
     }
 
-//    const QModbusDataUnit readRequest =  QModbusDataUnit(QModbusDataUnit::HoldingRegisters, StartAddr, counterAddr);
-    QModbusDataUnit readRequest(QModbusDataUnit::HoldingRegisters, 1, 2);
-    if(!modbusDevice)
-    {
-         ErrorMessage = newTime.toString("hh:mm:ss ")+ErrorReadMessage+ "Не создан сервер!";
-    }
-    if(modbusDevice->state() != QModbusDevice::ConnectedState)
-    {
-        onModbusStateChanged(modbusDevice->state());
-        ErrorMessage = newTime.toString("hh:mm:ss ")+ErrorReadMessage+ "Устройство не подключено!";
-    }
-    if(!modbusDevice->connectDevice())
-    {
-         ErrorMessage = newTime.toString("hh:mm:ss ")+ErrorReadMessage+ "Нет подключения!";
-    }
+    QModbusDataUnit readRequest(QModbusDataUnit::HoldingRegisters, StartAddr, counterAddr);
+    auto *reply = modbusDevice->sendReadRequest(readRequest, ServerEdit);
 
-
-        auto *reply = modbusDevice->sendReadRequest(readRequest, 1);
-
-        if (reply)
+    if (reply)
+    {
+        if (!reply->isFinished())
         {
-            if (!reply->isFinished())
+            connect(reply, &QModbusReply::finished, this, [this, ServerEdit]
             {
-                connect(reply, &QModbusReply::finished, this, [&]
-                {
-                    ErrorMessage = newTime.toString("hh:mm:ss ")+ErrorReadMessage+onReadReady((uint16_t)ServerEdit, ReceivedData);
-                    emit dataReceived();
-                });
-            }
-            else
-                delete reply; // broadcast replies return immediately
-        } else {
-//            ErrorMessage = newTime.toString("hh:mm:ss ")+ErrorReadMessage+modbusDevice->errorString();
+                onReadReady((uint16_t)ServerEdit);
+                ErrorMessage_receive = "";
+            });
         }
+        else
+            delete reply; // broadcast replies return immediately
+    } else {
+            ErrorMessage_receive = newTime.toString("hh:mm:ss ")+ErrorReadMessage+modbusDevice->errorString();
+    }
 
     return true;
 }
-QString SettingsModbus::onReadReady(uint16_t AddressSlave, uint16_t *data)
+bool SettingsModbus::onReadReady(uint16_t AddressSlave)
 {
-    QString ErrorMessage;
+    /*функция обработки полученных данных от слейва
+    * полученные данные хранятся в Buffer_Modbus_Receive
+    * после сигнала dataReceived можно вызвать метод GetModbusData_Receive для получения актуальных данных
+    */
     QDateTime newTime = QDateTime::currentDateTime();
     auto reply = qobject_cast<QModbusReply *>(sender());
     if (!reply)
     {
-        ErrorMessage = "No reply!";
-        return ErrorMessage;
+        ErrorMessage_receive = "No reply!";
+        return false;
     }
 
     if (reply->error() == QModbusDevice::NoError)
     {
         const QModbusDataUnit unit = reply->result();
+        Buffer_Modbus_Receive.clear();
         for (int i = 0, total = int(unit.valueCount()); i < total; ++i)
         {
-            data[i] = unit.value(i);
+           Buffer_Modbus_Receive.append(static_cast<uint16_t>(unit.value(i)));
         }
+        emit dataReceived();
     }
     else if (reply->error() == QModbusDevice::ProtocolError)
     {
-        ErrorMessage = tr("Read response error: %1 (Mobus exception: 0x%2)").
+        ErrorMessage_receive = tr("Read response error: %1 (Mobus exception: 0x%2)").
               arg(reply->errorString()).
               arg(reply->rawResult().exceptionCode(), -1, 16);
     }
     else
     {
-        ErrorMessage = tr("Read response error: %1 (code: 0x%2). Address: %3").
+        ErrorMessage_receive = tr("Read response error: %1 (code: 0x%2). Address: %3").
                 arg(reply->errorString()).
                 arg(reply->error(), -1, 16).
                 arg(AddressSlave);
         const QModbusDataUnit unit = reply->result();
-
     }
 
     reply->deleteLater();
 
-    return ErrorMessage;
+    return true;
+}
+QVector <uint16_t> SettingsModbus::GetModbusData_Receive()
+{
+    /*Функция передачи данных в главный класс*/
+    QVector <uint16_t> vector = {444};//проверка на пустоту
+    if(!Buffer_Modbus_Receive.isEmpty())
+    {
+        return Buffer_Modbus_Receive;
+    }
+
+    return vector;
+
 }
 void SettingsModbus::SetSettinsModBus()
 {
+    /*Функция обработки нажатия кнопки "сохранить". устанавливает настройки ком порта*/
     if(!modbusDevice)
     {
-        QMessageBox::critical(this, "Ошибка", "Настройки не установлены");
+        QMessageBox::critical(this, "Ошибка!", "Настройки не установлены");
         return;
     }
     if ((modbusDevice->state() != QModbusDevice::ConnectedState) && (m_settingsDialog->settings().namePort != "Custom"))
@@ -138,17 +184,20 @@ void SettingsModbus::SetSettinsModBus()
         if(modbusDevice->connectDevice())
         {
             QMessageBox::information(this, "Успешно!", "Настройки установлены");
+            m_settingsDialog->SetNameButton("Изменить", 0);
             emit SettingAreSet();//Сигнал для закрытия настроек
         }
         else
         {
-            QMessageBox::critical(this, "Ошибка", "Отказано в досупе");
+            QMessageBox::critical(this, "Ошибка!", "Отказано в досупе");
+
         }
     }
     else
     {
         modbusDevice->disconnectDevice();
-        QMessageBox::critical(this, "Ошибка", "Настройки не установлены");
+//        QMessageBox::critical(this, "Ошибка!", "Настройки не установлены");
+        m_settingsDialog->SetNameButton("Сохранить", 1);
     }
 }
 
@@ -156,7 +205,7 @@ void SettingsModbus::ConnectFunction()
 {
 
     connect(m_settingsDialog, &SettingsDialog::ClickedSaveButton, this, &SettingsModbus::SetSettinsModBus);
-//    onConnectTypeChanged();
+    onConnectTypeChanged();
     connect(this, &SettingsModbus::SettingAreSet, [this]()
     {
         this->close();
@@ -164,21 +213,21 @@ void SettingsModbus::ConnectFunction()
 
     connect(ui->pushButton_addDevice, &QPushButton::clicked, [this]()
     {
-        if(i>=0 && i<255)
+        if(NumberDevice_ui>=0 && NumberDevice_ui<255)
         {
-            AddNewWidgetDevice(i);
-            i++;
+            AddNewWidgetDevice(NumberDevice_ui);
+            NumberDevice_ui++;
         }
 
     });
 
     connect(ui->pushButton_removeDevice, &QPushButton::clicked, [this]()
     {
-       RemoveWidgetDevice(i-1);
-       i--;
-       if(i<0)
+       RemoveWidgetDevice(NumberDevice_ui-1);
+       NumberDevice_ui--;
+       if(NumberDevice_ui<0)
        {
-            i=0;
+            NumberDevice_ui=0;
        }
 
     });
@@ -194,15 +243,14 @@ void SettingsModbus::onConnectTypeChanged()
 
     connect(modbusDevice, &QModbusClient::errorOccurred, [this](QModbusDevice::Error) {
         QDateTime newTime = QDateTime::currentDateTime();
-        ErrorMessage = QString("%1%2").arg(newTime.toString("hh:mm:ss: ")).arg(modbusDevice->errorString());
+        ErrorMessage_receive = QString("%1%2").arg(newTime.toString("hh:mm:ss: ")).arg(modbusDevice->errorString());
     });
 
     if (!modbusDevice) {
         QDateTime newTime = QDateTime::currentDateTime();
-        ErrorMessage = QString("%1Could not create Modbus master.").arg(newTime.toString("hh:mm:ss: ")).arg(modbusDevice->errorString());
+        ErrorMessage_receive = QString("%1Could not create Modbus master.").arg(newTime.toString("hh:mm:ss: ")).arg(modbusDevice->errorString());
 
     } else {
-        ErrorMessage = "dd";
         connect(modbusDevice, &QModbusClient::stateChanged,
                 this, &SettingsModbus::onModbusStateChanged);
     }

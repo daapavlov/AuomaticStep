@@ -27,8 +27,9 @@ public:
     ~SettingsModbus();
 
     QString GetSettingsDevice_modbusRTU(uint8_t Device, uint16_t *Addr, uint16_t *AddrFirstReg, uint16_t *QuantityReg);
-    bool SendData_ModbusRTU();
-    bool AcceptData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr, uint16_t counterAddr, uint16_t *ReceivedData);
+    bool SendData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr, QVector <uint16_t> Data);
+    bool AcceptData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr, uint16_t counterAddr);
+    QVector <uint16_t> GetModbusData_Receive();
 
     struct Device//структура устройства, которое будет в сети модбас
     {
@@ -38,10 +39,14 @@ public:
         uint16_t quantity_registers;
     };
 
-    QString ErrorMessage="";
+    QString ErrorMessage_receive="";
+    QString ErrorMessage_transmission="";
 
 private:
     Ui::SettingsModbus *ui;
+
+    uint16_t NumberDevice_ui=0;
+    QVector <uint16_t> Buffer_Modbus_Receive;
 
     QString LabelNumber = "labelNumber_";
     QString LineEditName="lineEditName_";
@@ -55,12 +60,10 @@ private:
 
     QMessageBox *messageModbus = new QMessageBox();
 
-    int i=0;
-
     void ConnectFunction();
     void onConnectTypeChanged();
     void onModbusStateChanged(int state);
-    QString onReadReady(uint16_t AddressSlave, uint16_t *data);
+    bool onReadReady(uint16_t AddressSlave);
     QModbusDataUnit writeRequest() const;
 
 signals:

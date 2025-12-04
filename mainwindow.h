@@ -27,7 +27,6 @@ public:
 
 private:
     Ui::MainWindow *ui;
-    SettingsModbus *ad_settings_modbus = new SettingsModbus();
 
     QCustomPlot *m_customPlot = new QCustomPlot();
     QVector <double>  DataChartX, DataChartY;
@@ -55,7 +54,7 @@ private:
 
 
     SettingsModbus *m_settingsModbus = new SettingsModbus();
-    uint16_t *Modbus_Data;
+    QVector <uint16_t>dataRe = {444};
     QString ErrorModBus;
 
     void AddNewPoint(uint16_t NumberPoint);

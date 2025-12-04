@@ -77,9 +77,9 @@ SettingsDialog::SettingsDialog(QWidget *parent) :
     m_settings.stopBits = ui->stopBitsCombo->currentText().toInt();
     m_settings.timeout = ui->spinBox_timeout->value();
 
+
     emit ClickedSaveButton();
 #endif
-//    hide();
 
     });
 }
@@ -92,6 +92,13 @@ SettingsDialog::~SettingsDialog()
 SettingsDialog::Settings SettingsDialog::settings() const
 {
     return m_settings;
+}
+void SettingsDialog::SetNameButton(QString name, bool enabled)
+{
+    ui->applyButton->setText(name);
+//    ui->applyButton->setEnabled(enabled);
+
+    ui->groupBox->setEnabled(enabled);
 }
 void SettingsDialog::SettingPortName()
 {

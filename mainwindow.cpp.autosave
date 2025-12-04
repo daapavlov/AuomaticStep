@@ -144,7 +144,7 @@ void MainWindow::AddNewDataPointrChart(QCustomPlot *custom_plot, QVector<double>
     {
         custom_plot->graph(0)->setData(DataX, DataY);
         custom_plot->yAxis->setRange(0, 100);
-        custom_plot->xAxis->setRange(DataX.at(0), DataX.back());
+        custom_plot->xAxis->setRange(DataX.first(), DataX.back());
         custom_plot->replot();
     }
 

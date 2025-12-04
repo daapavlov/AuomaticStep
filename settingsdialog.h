@@ -88,6 +88,7 @@ public:
     Settings settings() const;
     Settings m_settings;
     void SettingPortName();
+    void SetNameButton(QString name, bool enabled);
 
 signals:
     void ClickedSaveButton();

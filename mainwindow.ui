@@ -34,7 +34,7 @@
            <x>0</x>
            <y>0</y>
            <width>778</width>
-           <height>650</height>
+           <height>600</height>
           </rect>
          </property>
         </widget>
@@ -80,7 +80,7 @@
              <x>0</x>
              <y>0</y>
              <width>498</width>
-             <height>320</height>
+             <height>295</height>
             </rect>
            </property>
            <layout class="QVBoxLayout" name="verticalLayout">
@@ -259,7 +259,7 @@
       <property name="maximumSize">
        <size>
         <width>16777215</width>
-        <height>50</height>
+        <height>100</height>
        </size>
       </property>
      </widget>
