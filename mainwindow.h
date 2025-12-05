@@ -33,8 +33,13 @@ private:
     // Элементы для отображения при наведении
     QCPItemEllipse* m_hoverPoint;
     QCPItemText* m_hoverText;
+    QTimer *timer_mode = new QTimer();
+    QTimer *timer_sendRUD = nullptr;
+    QTimer timer_readPointMode;
+    QThread *threadFile = new QThread();//Создаем новый поток
 
     uint16_t NumberPointMode=1;
+    int CurrentRegime=0;
     struct PointMode
     {
         uint8_t RUD=0;
@@ -53,24 +58,29 @@ private:
     QString newLabelStatus_objName = "label_status_";
 
 
-    SettingsModbus *m_settingsModbus = new SettingsModbus();
+    SettingsModbus *m_settingsModbus = nullptr;
     QVector <uint16_t>dataRe = {444};
     QString ErrorModBus;
 
     void AddNewPoint(uint16_t NumberPoint);
     void RemoveNewPoint(uint16_t NumberPoint);
     void WindowSpecifyingPoints();
-    void GetParametrToForms(PointMode *structure, uint16_t NumberPoint);
+    void GetParametrFromForms(PointMode *structure, uint16_t NumberPoint);
     void ClearParametrStruct(PointMode *structure);
     void SplittingIntoDots(PointMode structure_1, QVector<double> *vector1, QVector<double> *vector2);
+    uint16_t GetNumberPointMode();
+    bool SetFlagFinishMode(QString string, uint16_t NumberPoint);
+    uint16_t GetParametrRUD(uint16_t NumberPoint);
 
     void AddPlotToWindow(QCustomPlot *custom_plot);
-    void AddNewDataPointrChart(QCustomPlot *custom_plot, QVector<double> DataX, QVector <double> DataY);
+    void AddNewDataPointrChart(QCustomPlot *custom_plot, QVector<double> DataX, QVector <double> DataY, QMap <double, QString> point);
     void RemoveDataPointChart(QCustomPlot *custom_plot);
     void setupNearestPointTracking();
     void onMouseMoveNearestPoint(QMouseEvent* event);
 
 private slots:
     void AddPointToChrts();
+    void SendRud_timeout();
+    void Mode_timeout();
 };
 #endif // MAINWINDOW_H

@@ -12,6 +12,11 @@ SettingsModbus::SettingsModbus(QWidget *parent) :
     ui->setupUi(this);
     m_settingsDialog = new SettingsDialog(this);
     ConnectFunction();
+    ui->pushButton_addDevice->click();
+    ui->pushButton_addDevice->click();
+    ui->pushButton_addDevice->click();
+    ui->pushButton_addDevice->click();
+    ui->pushButton_addDevice->click();
     ui->tabWidget_comport->removeTab(1);
     ui->tabWidget_comport->addTab(m_settingsDialog, "Настройки COM порта");
 
@@ -21,7 +26,7 @@ SettingsModbus::~SettingsModbus()
 {
     delete ui;
 }
-bool SettingsModbus::SendData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr,QVector <uint16_t> Data)
+bool SettingsModbus::SendData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr, uint16_t *Data, uint16_t DataSize)
 {
     /*функция отправки данных в слейв
     * ServerEdit - адрес слейва
@@ -29,21 +34,22 @@ bool SettingsModbus::SendData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr,
     * Data - вектор с данными
     * Количество регистров, которые заполняются равно размеру вектора Data
     */
+    bool StReturn = 0;
     QDateTime newTime = QDateTime::currentDateTime();
     QString ErrorWriteMessage = "Ошибка при передаче: ";
     if (!modbusDevice)
         return false;
 
-    QModbusDataUnit writeUnit = QModbusDataUnit(QModbusDataUnit::HoldingRegisters, StartAddr, Data.size());
-    writeUnit.setValueCount(Data.size());
+    QModbusDataUnit writeUnit = QModbusDataUnit(QModbusDataUnit::HoldingRegisters, StartAddr, DataSize);
+    writeUnit.setValueCount(DataSize);
     for (int i = 0, total = int(writeUnit.valueCount()); i < total; ++i)
     {
-            writeUnit.setValue(i, Data.at(i));
+            writeUnit.setValue(i, Data[i]);
     }
 
     if (auto *reply = modbusDevice->sendWriteRequest(writeUnit, ServerEdit)) {
         if (!reply->isFinished()) {
-            connect(reply, &QModbusReply::finished, this, [this, reply, ErrorWriteMessage, newTime, ServerEdit]() {
+            connect(reply, &QModbusReply::finished, this, [this, reply, &ErrorWriteMessage, newTime, ServerEdit, &StReturn]() {
                 if (reply->error() == QModbusDevice::ProtocolError) {
                     ErrorMessage_transmission = newTime.toString("hh:mm:ss ")+ErrorWriteMessage+QString(tr("%1 (Mobus exception: 0x%2)")
                                                                          .arg(reply->errorString()).arg(reply->rawResult().exceptionCode()));
@@ -53,18 +59,19 @@ bool SettingsModbus::SendData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr,
                 }
                 else
                 {
-                    ErrorMessage_transmission = "";
+                    StReturn = 1;
                 }
                 reply->deleteLater();
             });
         } else {
             // broadcast replies return immediately
             reply->deleteLater();
+            StReturn = 1;
         }
     } else {
         ErrorMessage_transmission = newTime.toString("hh:mm:ss ")+ErrorWriteMessage+modbusDevice->errorString();
     }
-    return false;
+    return StReturn;
 }
 bool SettingsModbus::AcceptData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr, uint16_t counterAddr)
 {
@@ -272,11 +279,15 @@ void SettingsModbus::onModbusStateChanged(int state)
     }
 //        ui->connectButton->setText(tr("Отключить"));
 }
-QString SettingsModbus::GetSettingsDevice_modbusRTU(uint8_t Device, uint16_t *Addr, uint16_t *AddrFirstReg, uint16_t *QuantityReg)
+bool SettingsModbus::GetSettingsDevice_modbusRTU(uint8_t Device, uint16_t *Addr, uint16_t *AddrFirstReg, uint16_t *QuantityReg)
 {
     QString nameDevice;
     QString string_LineEditName = QString(LineEditName+"%1").arg(Device);
     QLineEdit *LineEditName = findChild<QLineEdit *>(string_LineEditName);
+    if(LineEditName==nullptr)
+    {
+       return 0;
+    }
     nameDevice = QString(LineEditName->text());
 
     QString string_SpinBoxID = QString(SpinBoxID+"%1").arg(Device);
@@ -291,7 +302,7 @@ QString SettingsModbus::GetSettingsDevice_modbusRTU(uint8_t Device, uint16_t *Ad
     QSpinBox *SpinBoxQuantity = findChild<QSpinBox *>(string_SpinBoxQuantity);
     *QuantityReg = SpinBoxQuantity->value();
 
-    return nameDevice;
+    return true;
 }
 void SettingsModbus::AddNewWidgetDevice(uint8_t NumberDevice)
 {
@@ -309,7 +320,15 @@ void SettingsModbus::AddNewWidgetDevice(uint8_t NumberDevice)
     QLineEdit *newLineEditName = new QLineEdit();
     QString string_lineEditName = QString(LineEditName+"%1").arg(NumberDevice);
     newLineEditName->setObjectName(string_lineEditName);
-    newLineEditName->setText(tr("Устройство %1").arg(NumberDevice));
+    switch (NumberDevice) {
+    case 0: newLineEditName->setText(tr("Пульт РУД"));break;
+    case 1: newLineEditName->setText(tr("Насос подкачки"));break;
+    case 2: newLineEditName->setText(tr("Воздухоотделитель"));break;
+    case 3: newLineEditName->setText(tr("Помпа высоковольтная"));break;
+    case 4: newLineEditName->setText(tr("Помпа низковольтная"));break;
+    default: newLineEditName->setText(tr("Устройство %1").arg(NumberDevice));break;
+    }
+
     newLineEditName->setMinimumSize(240,20);
     ui->gridLayout_2->addWidget(newLineEditName, Row, lineEditName_column);//добавляем виджет на компановку
 

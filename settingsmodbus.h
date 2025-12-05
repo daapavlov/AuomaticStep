@@ -26,8 +26,8 @@ public:
     explicit SettingsModbus(QWidget *parent = nullptr);
     ~SettingsModbus();
 
-    QString GetSettingsDevice_modbusRTU(uint8_t Device, uint16_t *Addr, uint16_t *AddrFirstReg, uint16_t *QuantityReg);
-    bool SendData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr, QVector <uint16_t> Data);
+    bool GetSettingsDevice_modbusRTU(uint8_t Device, uint16_t *Addr, uint16_t *AddrFirstReg, uint16_t *QuantityReg);
+    bool SendData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr, uint16_t *Data, uint16_t DataSize);
     bool AcceptData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr, uint16_t counterAddr);
     QVector <uint16_t> GetModbusData_Receive();
 

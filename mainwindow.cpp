@@ -6,14 +6,22 @@
 #include <QLineEdit>
 #include <QSpinBox>
 #include <QScrollBar>
+#include <QTimer>
+#include <windows.h>
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <mmsystem.h>
+//#pragma comment(lib, "winmm.lib")
+#endif
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
-    showMaximized();
-
+    m_settingsModbus = new SettingsModbus();
+    timer_sendRUD = new QTimer();
+//    showMaximized();
     AddPlotToWindow(m_customPlot);
     WindowSpecifyingPoints();//Функция создает в панели задания режимов начальную точку
     setupNearestPointTracking();
@@ -23,17 +31,27 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(ui->pushButton_start, &QPushButton::clicked, [this]
     {
-        m_settingsModbus->AcceptData_ModbusRTU(10, 1, 1);
-        ui->plainTextEdit_status->appendPlainText(m_settingsModbus->ErrorMessage_receive);
+        timer_mode->start(5000);
+//        threadFile->start();//Запускаем выполнение потока
+        timer_sendRUD->start(500);
+
+//        m_settingsModbus->AcceptData_ModbusRTU(10, 1, 1);
+//        ui->plainTextEdit_status->appendPlainText(m_settingsModbus->ErrorMessage_receive);
 
     });
     connect(m_settingsModbus, &SettingsModbus::dataReceived, this, [&]
     {
-        dataRe = m_settingsModbus->GetModbusData_Receive();
+//        dataRe = m_settingsModbus->GetModbusData_Receive();
         ui->plainTextEdit_status->appendPlainText(QString("Считано значение %1").arg(dataRe.first()));
-        m_settingsModbus->SendData_ModbusRTU(10, 0, dataRe);
+//        m_settingsModbus->SendData_ModbusRTU(10, 0, dataRe);
     });
 
+//    connect(threadFile, &QThread::started, this, [&]()
+//    {
+
+//    });
+    connect(timer_sendRUD, &QTimer::timeout, this, &MainWindow::SendRud_timeout);
+    connect(timer_mode, &QTimer::timeout, this, &MainWindow::Mode_timeout);
 
 }
 
@@ -41,6 +59,82 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+void MainWindow::Mode_timeout()
+{
+    QDateTime newTime = QDateTime::currentDateTime();
+
+    /*функция отмеряет заданный режим*/
+
+    PlaySound(TEXT("SystemAsterisk"), NULL, SND_ALIAS | SND_ASYNC | SND_NODEFAULT);
+    PointMode stru;
+    GetParametrFromForms(&stru, CurrentRegime);
+    int interval = stru.Time*60000;//в миллисекундх
+    timer_mode->setInterval(interval);
+    if(CurrentRegime>0)
+    {
+       SetFlagFinishMode("Выполнен", CurrentRegime-1);
+    }
+
+    if(CurrentRegime>=GetNumberPointMode())
+    {
+        timer_mode->stop();
+        timer_sendRUD->stop();
+        CurrentRegime=0;
+        SendRud_timeout();
+        ui->plainTextEdit_status->appendPlainText(QString("%1Выполнена остановка цикла").arg(newTime.toString("hh:mm:ss ")));
+        for(int i=0;i<GetNumberPointMode();i++)
+        {
+            SetFlagFinishMode("Не выполнен", i);
+        }
+        //РУД в 0
+    }
+    else
+    {
+        ui->plainTextEdit_status->appendPlainText(QString("%1Выполняется точка %2").arg(newTime.toString("hh:mm:ss ")).arg(CurrentRegime));
+        CurrentRegime+=1;
+    }
+
+
+}
+void MainWindow::SendRud_timeout()
+{
+    /*функция отправляет значение РУД по модбасу*/
+    QDateTime newTime = QDateTime::currentDateTime();
+    uint16_t addressRUD;
+    uint16_t numberFirstRegistersRUD;
+    uint16_t quantity;
+    uint16_t ValueRud[1];
+    if(CurrentRegime>0)
+    {
+         ValueRud[0] = GetParametrRUD(CurrentRegime-1);
+    }
+    else
+    {
+       ValueRud[0]=0;
+    }
+
+    if(m_settingsModbus)
+    {
+        if(m_settingsModbus->GetSettingsDevice_modbusRTU(0,&addressRUD, &numberFirstRegistersRUD, &quantity))
+        {
+            if(quantity>=1)
+            {
+                m_settingsModbus->SendData_ModbusRTU(addressRUD, numberFirstRegistersRUD, ValueRud, 1);
+//                ui->plainTextEdit_status->appendPlainText(m_settingsModbus->ErrorMessage_transmission);
+            }
+            else
+            {
+                    ui->plainTextEdit_status->appendPlainText(QString("%1Превышено число допустимых регистров для записи").arg(newTime.toString("hh:mm:ss ")));
+            }
+        }
+        else
+        {
+                ui->plainTextEdit_status->appendPlainText(QString("%1Не существует адреса РУД").arg(newTime.toString("hh:mm:ss ")));
+        }
+
+    }
+
 }
 void MainWindow::setupNearestPointTracking()
 {
@@ -67,7 +161,6 @@ void MainWindow::setupNearestPointTracking()
 
     connect(m_customPlot, &QCustomPlot::mouseMove, this, &MainWindow::onMouseMoveNearestPoint);
 }
-
 void MainWindow::onMouseMoveNearestPoint(QMouseEvent* event)
 {
     if (m_customPlot->graphCount() == 0) return;
@@ -105,9 +198,9 @@ void MainWindow::onMouseMoveNearestPoint(QMouseEvent* event)
 
         // Обновляем текст
          m_hoverText->setText(
-            QString("РУД: %2\n Время %1")
-                .arg(closestPoint->key, 0, 'f', 3)
-                .arg(closestPoint->value, 0, 'f', 3)
+            QString("РУД: %2 %\n Время %1 мин")
+                .arg(closestPoint->key, 0, 'f', 1)
+                .arg(closestPoint->value, 0, 'f', 1)
                 //.arg(minDistance, 0, 'f', 3)
         );
     } else {
@@ -121,7 +214,7 @@ void MainWindow::AddPlotToWindow(QCustomPlot *custom_plot)
 {
     ui->scrollArea_charts->setWidget(custom_plot);
     custom_plot->addGraph();
-    custom_plot->yAxis->setRange(0, 50);
+    custom_plot->yAxis->setRange(0, 110);
     custom_plot->xAxis->setRange(0, 50);
     custom_plot->graph(0)->setName("График ресурсных испытаний");
     custom_plot->graph(0)->setPen((QPen(Qt::black, 4)));
@@ -137,14 +230,20 @@ void MainWindow::AddPlotToWindow(QCustomPlot *custom_plot)
     // Плавное масштабирование к курсору мыши
     custom_plot->setSelectionTolerance(10); // Чувствительность выделения
 }
-void MainWindow::AddNewDataPointrChart(QCustomPlot *custom_plot, QVector<double> DataX, QVector <double> DataY)
+void MainWindow::AddNewDataPointrChart(QCustomPlot *custom_plot, QVector<double> DataX, QVector <double> DataY, QMap <double, QString> point)
 {
     /*Добавляем точки на график и устанавливаем оси*/
     if(!DataX.isEmpty() && !DataY.isEmpty())
     {
         custom_plot->graph(0)->setData(DataX, DataY);
-        custom_plot->yAxis->setRange(0, 100);
-        custom_plot->xAxis->setRange(DataX.at(0), DataX.back());
+//        custom_plot->yAxis->setRange(0, 100);
+        QSharedPointer<QCPAxisTickerText> textTicker(new QCPAxisTickerText);
+
+        for (double key : point.keys()) {
+            textTicker->addTick(key, point[key]);
+        }
+        m_customPlot->yAxis->setTicker(textTicker);
+        custom_plot->xAxis->setRange(DataX.first(), DataX.back());
         custom_plot->replot();
     }
 
@@ -158,13 +257,20 @@ void MainWindow::RemoveDataPointChart(QCustomPlot *custom_plot)
         custom_plot->replot();
     }
 }
-void MainWindow::GetParametrToForms(PointMode *structure, uint16_t NumberPoint)
+void MainWindow::GetParametrFromForms(PointMode *structure, uint16_t NumberPoint)
 {
     /*функция читает параметры с формы задания режимов*/
     QString string_1 = newSpinBoxTime_objName+QString("%1").arg(NumberPoint);
     QDoubleSpinBox *SpinBox_0 = findChild<QDoubleSpinBox *>(string_1);
     if(SpinBox_0!=nullptr)
+    {
         structure->Time = SpinBox_0->value();
+    }
+    else
+    {
+        return;
+    }
+
 
     QString string_2 = newSpinBoxRUD_objName+QString("%1").arg(NumberPoint);
     QSpinBox *SpinBox_1 = findChild<QSpinBox *>(string_2);
@@ -181,6 +287,26 @@ void MainWindow::GetParametrToForms(PointMode *structure, uint16_t NumberPoint)
     if(LineEdit_0!=nullptr)
         structure->NameMode = LineEdit_0->text();
 }
+bool MainWindow::SetFlagFinishMode(QString string, uint16_t NumberPoint)
+{
+    QString string_0 = newLabelStatus_objName+QString("%1").arg(NumberPoint);
+    QLabel *RemoveLabel_1 = findChild<QLabel *>(string_0);
+    if(RemoveLabel_1!=nullptr)
+    {
+        RemoveLabel_1->setText(string);
+    }
+}
+uint16_t MainWindow::GetParametrRUD(uint16_t NumberPoint)
+{
+    QString string_2 = newSpinBoxRUD_objName+QString("%1").arg(NumberPoint);
+    QSpinBox *SpinBox_1 = findChild<QSpinBox *>(string_2);
+    if(SpinBox_1!=nullptr)
+    {
+       return SpinBox_1->value();
+    }
+
+    return 0;
+}
 void MainWindow::ClearParametrStruct(PointMode *structure)
 {
     /*Функция очищает т-элеент структуры*/
@@ -191,18 +317,24 @@ void MainWindow::ClearParametrStruct(PointMode *structure)
 }
 void MainWindow::AddPointToChrts()
 {
+    QMap <double, QString> points;
     /*Функция записывает на график заново точки, перед этим очищает вектора*/
     DataChartX.clear();
     DataChartY.clear();
     RemoveDataPointChart(m_customPlot);
     int i=0;
-    while(i<NumberPointMode)
+    while(i<GetNumberPointMode())
     {
-        GetParametrToForms(&ArrayPoint[i], i);
+        GetParametrFromForms(&ArrayPoint[i], i);
+        points.insert(ArrayPoint[i].RUD, ArrayPoint[i].NameMode);
         SplittingIntoDots(ArrayPoint[i], &DataChartX, &DataChartY);
         i++;
     }
-    AddNewDataPointrChart(m_customPlot, DataChartX, DataChartY);
+    AddNewDataPointrChart(m_customPlot, DataChartX, DataChartY, points);
+}
+uint16_t MainWindow::GetNumberPointMode()
+{
+    return NumberPointMode;
 }
 void MainWindow::SplittingIntoDots(PointMode structure_1, QVector<double> *vector1, QVector<double> *vector2)
 {
@@ -236,7 +368,7 @@ void MainWindow::WindowSpecifyingPoints()
         {
             AddNewPoint(NumberPointMode);
             ui->pushButton_RemovePoint->setEnabled(true);
-            GetParametrToForms(&ArrayPoint[NumberPointMode], NumberPointMode);
+            GetParametrFromForms(&ArrayPoint[NumberPointMode], NumberPointMode);
             NumberPointMode++;
         }
         QScrollBar* verticalBar = ui->scrollArea->verticalScrollBar();
