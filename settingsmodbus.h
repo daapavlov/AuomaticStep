@@ -40,7 +40,8 @@ public:
     };
 
     QString ErrorMessage_receive="";
-    QString ErrorMessage_transmission="";
+    QString ErrorMessage_transmission="no error";
+    bool Flags_setSettings_comPort=false;
 
 private:
     Ui::SettingsModbus *ui;
@@ -60,6 +61,8 @@ private:
 
     QMessageBox *messageModbus = new QMessageBox();
 
+
+
     void ConnectFunction();
     void onConnectTypeChanged();
     void onModbusStateChanged(int state);
@@ -69,6 +72,7 @@ private:
 signals:
     void SettingAreSet();
     void dataReceived();
+    void dataTransmitted();
 private slots:
     void AddNewWidgetDevice(uint8_t NumberDevice);
     void RemoveWidgetDevice(uint8_t NumberDevice);

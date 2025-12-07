@@ -27,20 +27,30 @@ SOURCES += \
     mainwindow.cpp \
     qcustomplot.cpp \
     settingsdialog.cpp \
-    settingsmodbus.cpp
+    settingsmodbus.cpp \
+    settingsusertime.cpp
 
 HEADERS += \
     mainwindow.h \
     qcustomplot.h \
     settingsdialog.h \
-    settingsmodbus.h
+    settingsmodbus.h \
+    settingsusertime.h
 
 FORMS += \
     mainwindow.ui \
     settingsdialog.ui \
-    settingsmodbus.ui
+    settingsmodbus.ui \
+    settingsusertime.ui
+
+
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
+
+DISTFILES += \
+    music/Пролет космического транспорта № 38.mp3
+
+RESOURCES +=

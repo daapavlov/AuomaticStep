@@ -26,24 +26,26 @@ MainWindow::MainWindow(QWidget *parent)
     WindowSpecifyingPoints();//Функция создает в панели задания режимов начальную точку
     setupNearestPointTracking();
     connect(ui->actionModBus_RTU, &QAction::triggered, m_settingsModbus, &SettingsModbus::show);
+    connect(ui->action_times, &QAction::triggered, m_userTime, &SettingsUserTime::show);
 
     connect(ui->pushButton_writePoints, &QPushButton::clicked, this, &MainWindow::AddPointToChrts);
 
     connect(ui->pushButton_start, &QPushButton::clicked, [this]
     {
-        timer_mode->start(5000);
-//        threadFile->start();//Запускаем выполнение потока
-        timer_sendRUD->start(500);
 
-//        m_settingsModbus->AcceptData_ModbusRTU(10, 1, 1);
-//        ui->plainTextEdit_status->appendPlainText(m_settingsModbus->ErrorMessage_receive);
-
+        if(ui->pushButton_start->text()=="Запустить")
+        {
+            Mode_start();
+        }
+        else
+        {
+            Mode_stop();
+        }
     });
     connect(m_settingsModbus, &SettingsModbus::dataReceived, this, [&]
     {
 //        dataRe = m_settingsModbus->GetModbusData_Receive();
         ui->plainTextEdit_status->appendPlainText(QString("Считано значение %1").arg(dataRe.first()));
-//        m_settingsModbus->SendData_ModbusRTU(10, 0, dataRe);
     });
 
 //    connect(threadFile, &QThread::started, this, [&]()
@@ -52,6 +54,7 @@ MainWindow::MainWindow(QWidget *parent)
 //    });
     connect(timer_sendRUD, &QTimer::timeout, this, &MainWindow::SendRud_timeout);
     connect(timer_mode, &QTimer::timeout, this, &MainWindow::Mode_timeout);
+    connect(timer_modeMessage, &QTimer::timeout, this, &MainWindow::Mode_Message);
 
 }
 
@@ -60,42 +63,90 @@ MainWindow::~MainWindow()
 {
     delete ui;
 }
+void MainWindow::Mode_Message()
+{
+    timer_modeMessage->stop();
+    MessageBeep(MB_OK);
+
+}
 void MainWindow::Mode_timeout()
 {
     QDateTime newTime = QDateTime::currentDateTime();
 
     /*функция отмеряет заданный режим*/
 
-    PlaySound(TEXT("SystemAsterisk"), NULL, SND_ALIAS | SND_ASYNC | SND_NODEFAULT);
+
     PointMode stru;
     GetParametrFromForms(&stru, CurrentRegime);
     int interval = stru.Time*60000;//в миллисекундх
-    timer_mode->setInterval(interval);
-    if(CurrentRegime>0)
+    if(sendData_RUD==1)
     {
-       SetFlagFinishMode("Выполнен", CurrentRegime-1);
-    }
 
-    if(CurrentRegime>=GetNumberPointMode())
-    {
-        timer_mode->stop();
-        timer_sendRUD->stop();
-        CurrentRegime=0;
-        SendRud_timeout();
-        ui->plainTextEdit_status->appendPlainText(QString("%1Выполнена остановка цикла").arg(newTime.toString("hh:mm:ss ")));
-        for(int i=0;i<GetNumberPointMode();i++)
+        timer_mode->setInterval(interval+500);
+        if(CurrentRegime>0)
         {
-            SetFlagFinishMode("Не выполнен", i);
+           SetFlagFinishMode("Выполнен", CurrentRegime-1, 0);
         }
-        //РУД в 0
+
+
+        if(CurrentRegime>=GetNumberPointMode())
+        {
+            Mode_stop();
+            //РУД в 0
+        }
+        else
+        {
+//            PlaySound(TEXT("SystemAsterisk"), NULL, SND_ALIAS | SND_ASYNC | SND_NODEFAULT);
+            MessageBeep(MB_OK);
+            timer_modeMessage->start(interval-(m_userTime->GetParametr(2)*60000));
+            ui->plainTextEdit_status->appendPlainText(QString("%1Выполняется точка %2").arg(newTime.toString("hh:mm:ss ")).arg(CurrentRegime));
+            SetFlagFinishMode("Выполняется", CurrentRegime, 0);
+            if(CurrentRegime == GetNumberPointMode()-1)
+            {
+                ui->pushButton_RemovePoint->setEnabled(false);
+            }
+            CurrentRegime+=1;
+
+        }
+    }
+}
+void MainWindow::Mode_start()
+{
+    QDateTime newTime = QDateTime::currentDateTime();
+    PointMode mode;
+    GetParametrFromForms(&mode, 0);
+
+    if(mode.Time>0 && m_settingsModbus->Flags_setSettings_comPort==1)
+    {
+        ui->actionModBus_RTU->setEnabled(false);
+        ui->action_times->setEnabled(false);
+        ui->plainTextEdit_status->clear();
+        timer_mode->start(m_userTime->GetParametr(0)*1000);
+        timer_sendRUD->start(m_userTime->GetParametr(1));
+        ui->pushButton_start->setText("Остановить");
     }
     else
     {
-        ui->plainTextEdit_status->appendPlainText(QString("%1Выполняется точка %2").arg(newTime.toString("hh:mm:ss ")).arg(CurrentRegime));
-        CurrentRegime+=1;
+        ui->plainTextEdit_status->appendPlainText(QString("%1Не удалось запустить цикл. Проверьте первого длительность цикла").arg(newTime.toString("hh:mm:ss ")));
     }
-
-
+}
+void MainWindow::Mode_stop()
+{
+    ui->actionModBus_RTU->setEnabled(true);
+    ui->action_times->setEnabled(true);
+//    PlaySound(TEXT("SystemAsterisk"), NULL, SND_ALIAS | SND_ASYNC | SND_NODEFAULT);
+    MessageBeep(MB_OK);
+    QDateTime newTime = QDateTime::currentDateTime();
+    timer_mode->stop();
+    timer_sendRUD->stop();
+    CurrentRegime=0;
+    SendRud_timeout();
+    ui->plainTextEdit_status->appendPlainText(QString("%1Выполнена остановка цикла").arg(newTime.toString("hh:mm:ss ")));
+    for(int i=0;i<GetNumberPointMode();i++)
+    {
+        SetFlagFinishMode("Не выполнен", i, 1);
+    }
+    ui->pushButton_start->setText("Запустить");
 }
 void MainWindow::SendRud_timeout()
 {
@@ -120,17 +171,29 @@ void MainWindow::SendRud_timeout()
         {
             if(quantity>=1)
             {
-                m_settingsModbus->SendData_ModbusRTU(addressRUD, numberFirstRegistersRUD, ValueRud, 1);
-//                ui->plainTextEdit_status->appendPlainText(m_settingsModbus->ErrorMessage_transmission);
+                if((m_settingsModbus->SendData_ModbusRTU(addressRUD, numberFirstRegistersRUD, ValueRud, 1))==false)
+                {
+                    if(m_settingsModbus->ErrorMessage_transmission!="no error")
+                    {
+                       ui->plainTextEdit_status->appendPlainText(m_settingsModbus->ErrorMessage_transmission);
+                       sendData_RUD=0;
+                    }
+                    else
+                    {
+                        sendData_RUD=1;
+                    }
+                }
             }
             else
             {
                     ui->plainTextEdit_status->appendPlainText(QString("%1Превышено число допустимых регистров для записи").arg(newTime.toString("hh:mm:ss ")));
+                    sendData_RUD=0;
             }
         }
         else
         {
                 ui->plainTextEdit_status->appendPlainText(QString("%1Не существует адреса РУД").arg(newTime.toString("hh:mm:ss ")));
+                sendData_RUD=0;
         }
 
     }
@@ -216,7 +279,6 @@ void MainWindow::AddPlotToWindow(QCustomPlot *custom_plot)
     custom_plot->addGraph();
     custom_plot->yAxis->setRange(0, 110);
     custom_plot->xAxis->setRange(0, 50);
-    custom_plot->graph(0)->setName("График ресурсных испытаний");
     custom_plot->graph(0)->setPen((QPen(Qt::black, 4)));
 
 
@@ -287,7 +349,7 @@ void MainWindow::GetParametrFromForms(PointMode *structure, uint16_t NumberPoint
     if(LineEdit_0!=nullptr)
         structure->NameMode = LineEdit_0->text();
 }
-bool MainWindow::SetFlagFinishMode(QString string, uint16_t NumberPoint)
+bool MainWindow::SetFlagFinishMode(QString string, uint16_t NumberPoint, bool EnabledTime)
 {
     QString string_0 = newLabelStatus_objName+QString("%1").arg(NumberPoint);
     QLabel *RemoveLabel_1 = findChild<QLabel *>(string_0);
@@ -295,6 +357,15 @@ bool MainWindow::SetFlagFinishMode(QString string, uint16_t NumberPoint)
     {
         RemoveLabel_1->setText(string);
     }
+    QString string_1 = newSpinBoxTime_objName+QString("%1").arg(NumberPoint);
+    QDoubleSpinBox *SpinBox_0 = findChild<QDoubleSpinBox *>(string_1);
+    if(SpinBox_0!=nullptr)
+    {
+        SpinBox_0->setEnabled(EnabledTime);
+    }
+
+
+    return 1;
 }
 uint16_t MainWindow::GetParametrRUD(uint16_t NumberPoint)
 {

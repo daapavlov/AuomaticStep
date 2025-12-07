@@ -5,8 +5,10 @@
 
 #include "settingsmodbus.h"
 #include "qcustomplot.h"
+#include "settingsusertime.h"
 
 #include <QMouseEvent>
+
 
 QT_BEGIN_NAMESPACE
 
@@ -34,12 +36,14 @@ private:
     QCPItemEllipse* m_hoverPoint;
     QCPItemText* m_hoverText;
     QTimer *timer_mode = new QTimer();
+    QTimer *timer_modeMessage = new QTimer();
     QTimer *timer_sendRUD = nullptr;
     QTimer timer_readPointMode;
     QThread *threadFile = new QThread();//Создаем новый поток
 
     uint16_t NumberPointMode=1;
     int CurrentRegime=0;
+    bool sendData_RUD=0;
     struct PointMode
     {
         uint8_t RUD=0;
@@ -62,6 +66,10 @@ private:
     QVector <uint16_t>dataRe = {444};
     QString ErrorModBus;
 
+    SettingsUserTime *m_userTime = new SettingsUserTime();
+
+
+
     void AddNewPoint(uint16_t NumberPoint);
     void RemoveNewPoint(uint16_t NumberPoint);
     void WindowSpecifyingPoints();
@@ -69,7 +77,7 @@ private:
     void ClearParametrStruct(PointMode *structure);
     void SplittingIntoDots(PointMode structure_1, QVector<double> *vector1, QVector<double> *vector2);
     uint16_t GetNumberPointMode();
-    bool SetFlagFinishMode(QString string, uint16_t NumberPoint);
+    bool SetFlagFinishMode(QString string, uint16_t NumberPoint, bool EnabledTime);
     uint16_t GetParametrRUD(uint16_t NumberPoint);
 
     void AddPlotToWindow(QCustomPlot *custom_plot);
@@ -77,10 +85,14 @@ private:
     void RemoveDataPointChart(QCustomPlot *custom_plot);
     void setupNearestPointTracking();
     void onMouseMoveNearestPoint(QMouseEvent* event);
+    void playWindowsSystemSound(int type);
 
 private slots:
     void AddPointToChrts();
     void SendRud_timeout();
     void Mode_timeout();
+    void Mode_stop();
+    void Mode_start();
+    void Mode_Message();
 };
 #endif // MAINWINDOW_H

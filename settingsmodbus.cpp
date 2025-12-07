@@ -31,10 +31,10 @@ bool SettingsModbus::SendData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr,
     /*функция отправки данных в слейв
     * ServerEdit - адрес слейва
     * StartAddr - начальный регистр
-    * Data - вектор с данными
+    * Data - массив с данными
     * Количество регистров, которые заполняются равно размеру вектора Data
     */
-    bool StReturn = 0;
+    bool StReturn = false;
     QDateTime newTime = QDateTime::currentDateTime();
     QString ErrorWriteMessage = "Ошибка при передаче: ";
     if (!modbusDevice)
@@ -49,24 +49,31 @@ bool SettingsModbus::SendData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr,
 
     if (auto *reply = modbusDevice->sendWriteRequest(writeUnit, ServerEdit)) {
         if (!reply->isFinished()) {
-            connect(reply, &QModbusReply::finished, this, [this, reply, &ErrorWriteMessage, newTime, ServerEdit, &StReturn]() {
-                if (reply->error() == QModbusDevice::ProtocolError) {
-                    ErrorMessage_transmission = newTime.toString("hh:mm:ss ")+ErrorWriteMessage+QString(tr("%1 (Mobus exception: 0x%2)")
-                                                                         .arg(reply->errorString()).arg(reply->rawResult().exceptionCode()));
-                } else if (reply->error() != QModbusDevice::NoError) {
-                    ErrorMessage_transmission = newTime.toString("hh:mm:ss ")+ErrorWriteMessage+QString(tr("Write response error: %1 (code: 0x%2). Address: %3").
-                        arg(reply->errorString()).arg(reply->error()).arg(ServerEdit));
+            connect(reply, &QModbusReply::finished, this, [this, reply, ErrorWriteMessage, newTime, ServerEdit, &StReturn]() {
+                if (reply) {
+                    if (reply->error() == QModbusDevice::ProtocolError) {
+                        ErrorMessage_transmission = newTime.toString("hh:mm:ss ")+ErrorWriteMessage+QString(tr("%1 (Mobus exception: 0x%2)")
+                                                                             .arg(reply->errorString()).arg(reply->rawResult().exceptionCode()));
+                    } else if (reply->error() != QModbusDevice::NoError) {
+                        ErrorMessage_transmission = newTime.toString("hh:mm:ss ")+ErrorWriteMessage+QString(tr("Write response error: %1 (code: 0x%2). Address: %3").
+                            arg(reply->errorString()).arg(reply->error()).arg(ServerEdit));
+                    }
+                    else
+                    {
+                        ErrorMessage_transmission = "no error";
+                        emit dataTransmitted();
+                        StReturn = true;
+                    }
                 }
                 else
                 {
-                    StReturn = 1;
+                    ErrorMessage_transmission = newTime.toString("hh:mm:ss ")+ErrorWriteMessage+"Invalid reply";
                 }
                 reply->deleteLater();
             });
         } else {
             // broadcast replies return immediately
             reply->deleteLater();
-            StReturn = 1;
         }
     } else {
         ErrorMessage_transmission = newTime.toString("hh:mm:ss ")+ErrorWriteMessage+modbusDevice->errorString();
@@ -171,6 +178,7 @@ void SettingsModbus::SetSettinsModBus()
     if(!modbusDevice)
     {
         QMessageBox::critical(this, "Ошибка!", "Настройки не установлены");
+        Flags_setSettings_comPort = false;
         return;
     }
     if ((modbusDevice->state() != QModbusDevice::ConnectedState) && (m_settingsDialog->settings().namePort != "Custom"))
@@ -192,18 +200,19 @@ void SettingsModbus::SetSettinsModBus()
         {
             QMessageBox::information(this, "Успешно!", "Настройки установлены");
             m_settingsDialog->SetNameButton("Изменить", 0);
+            Flags_setSettings_comPort = true;
             emit SettingAreSet();//Сигнал для закрытия настроек
         }
         else
         {
             QMessageBox::critical(this, "Ошибка!", "Отказано в досупе");
-
+            Flags_setSettings_comPort = false;
         }
     }
     else
     {
         modbusDevice->disconnectDevice();
-//        QMessageBox::critical(this, "Ошибка!", "Настройки не установлены");
+        Flags_setSettings_comPort = false;
         m_settingsDialog->SetNameButton("Сохранить", 1);
     }
 }
@@ -343,12 +352,15 @@ void SettingsModbus::AddNewWidgetDevice(uint8_t NumberDevice)
     QSpinBox *newSpinBoxAddr = new QSpinBox();//создаем объект указывающий на адрес первого регистра слейва
     QString string_spinBoxAddr = QString(SpinBoxAddr+"%1").arg(NumberDevice);
     newSpinBoxAddr->setObjectName(string_spinBoxAddr);
+
     newSpinBoxAddr->setMinimumSize(68,20);
     ui->gridLayout_2->addWidget(newSpinBoxAddr, Row, SpinBoxAddr_column);
 
     QSpinBox *newSpinBoxQuantity = new QSpinBox();//создаем объект указывающий на количество регистров слейва
     QString string_spinBoxQuantity = QString(SpinBoxQuantity+"%1").arg(NumberDevice);
     newSpinBoxQuantity->setObjectName(string_spinBoxQuantity);
+    newSpinBoxQuantity->setMinimum(1);
+    newSpinBoxQuantity->setMaximum(10);
     newSpinBoxQuantity->setMinimumSize(68,20);
     ui->gridLayout_2->addWidget(newSpinBoxQuantity, Row, spinBoxQuantity_column);
 

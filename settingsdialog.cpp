@@ -96,7 +96,6 @@ SettingsDialog::Settings SettingsDialog::settings() const
 void SettingsDialog::SetNameButton(QString name, bool enabled)
 {
     ui->applyButton->setText(name);
-//    ui->applyButton->setEnabled(enabled);
 
     ui->groupBox->setEnabled(enabled);
 }
