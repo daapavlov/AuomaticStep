@@ -25,6 +25,7 @@ DEFINES += QT_DEPRECATED_WARNINGS
 SOURCES += \
     main.cpp \
     mainwindow.cpp \
+    mouseclickhandler.cpp \
     qcustomplot.cpp \
     settingsdialog.cpp \
     settingsmodbus.cpp \
@@ -32,6 +33,7 @@ SOURCES += \
 
 HEADERS += \
     mainwindow.h \
+    mouseclickhandler.h \
     qcustomplot.h \
     settingsdialog.h \
     settingsmodbus.h \

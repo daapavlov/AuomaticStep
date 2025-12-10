@@ -11,6 +11,7 @@
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <mmsystem.h>
+
 //#pragma comment(lib, "winmm.lib")
 #endif
 
@@ -25,6 +26,22 @@ MainWindow::MainWindow(QWidget *parent)
     AddPlotToWindow(m_customPlot);
     WindowSpecifyingPoints();//Функция создает в панели задания режимов начальную точку
     setupNearestPointTracking();
+
+    MouseClickHandler *handler_scrollArea = new MouseClickHandler(ui->scrollArea);
+    connect(handler_scrollArea, &MouseClickHandler:: leftClicked,
+                 [=](const QPoint &pos) {
+        setFocus(); // в конструкторе или при необходимости
+        setFocusPolicy(Qt::StrongFocus); // установите политику фокуса
+         });
+    connect(handler_scrollArea, &MouseClickHandler:: rightClicked,
+                 [=](const QPoint &pos) {
+
+                 setStyle(0, SelectedObject+1, 0);
+
+                 SelectedObject=-1;
+//             }
+         });
+
     connect(ui->actionModBus_RTU, &QAction::triggered, m_settingsModbus, &SettingsModbus::show);
     connect(ui->action_times, &QAction::triggered, m_userTime, &SettingsUserTime::show);
 
@@ -42,6 +59,7 @@ MainWindow::MainWindow(QWidget *parent)
             Mode_stop();
         }
     });
+
     connect(m_settingsModbus, &SettingsModbus::dataReceived, this, [&]
     {
 //        dataRe = m_settingsModbus->GetModbusData_Receive();
@@ -55,6 +73,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(timer_sendRUD, &QTimer::timeout, this, &MainWindow::SendRud_timeout);
     connect(timer_mode, &QTimer::timeout, this, &MainWindow::Mode_timeout);
     connect(timer_modeMessage, &QTimer::timeout, this, &MainWindow::Mode_Message);
+
 
 }
 
@@ -116,19 +135,27 @@ void MainWindow::Mode_start()
     PointMode mode;
     GetParametrFromForms(&mode, 0);
 
-    if(mode.Time>0 && m_settingsModbus->Flags_setSettings_comPort==1)
+    if(m_settingsModbus->Flags_setSettings_comPort==1)
     {
-        ui->actionModBus_RTU->setEnabled(false);
-        ui->action_times->setEnabled(false);
-        ui->plainTextEdit_status->clear();
-        timer_mode->start(m_userTime->GetParametr(0)*1000);
-        timer_sendRUD->start(m_userTime->GetParametr(1));
-        ui->pushButton_start->setText("Остановить");
+        if(mode.Time>0)
+        {
+            ui->actionModBus_RTU->setEnabled(false);
+            ui->action_times->setEnabled(false);
+            ui->plainTextEdit_status->clear();
+            timer_mode->start(m_userTime->GetParametr(0)*1000);
+            timer_sendRUD->start(m_userTime->GetParametr(1));
+            ui->pushButton_start->setText("Остановить");
+        }
+        else
+        {
+            ui->plainTextEdit_status->appendPlainText(QString("%1Не удалось запустить цикл. Проверьте первого длительность цикла").arg(newTime.toString("hh:mm:ss ")));
+        }
     }
     else
     {
-        ui->plainTextEdit_status->appendPlainText(QString("%1Не удалось запустить цикл. Проверьте первого длительность цикла").arg(newTime.toString("hh:mm:ss ")));
+        ui->plainTextEdit_status->appendPlainText(QString("%1Не удалось запустить цикл. Проверьте настройки modbus").arg(newTime.toString("hh:mm:ss ")));
     }
+
 }
 void MainWindow::Mode_stop()
 {
@@ -322,6 +349,8 @@ void MainWindow::RemoveDataPointChart(QCustomPlot *custom_plot)
 void MainWindow::GetParametrFromForms(PointMode *structure, uint16_t NumberPoint)
 {
     /*функция читает параметры с формы задания режимов*/
+
+
     QString string_1 = newSpinBoxTime_objName+QString("%1").arg(NumberPoint);
     QDoubleSpinBox *SpinBox_0 = findChild<QDoubleSpinBox *>(string_1);
     if(SpinBox_0!=nullptr)
@@ -333,6 +362,9 @@ void MainWindow::GetParametrFromForms(PointMode *structure, uint16_t NumberPoint
         return;
     }
 
+    QString string_0 = newLabelNumberPoint_objName+QString("%1").arg(NumberPoint);
+    QLabel *RemoveLabel_0 = findChild<QLabel *>(string_0);
+    structure->number = RemoveLabel_0->text();
 
     QString string_2 = newSpinBoxRUD_objName+QString("%1").arg(NumberPoint);
     QSpinBox *SpinBox_1 = findChild<QSpinBox *>(string_2);
@@ -348,6 +380,11 @@ void MainWindow::GetParametrFromForms(PointMode *structure, uint16_t NumberPoint
     QLineEdit *LineEdit_0 = findChild<QLineEdit *>(string_4);
     if(LineEdit_0!=nullptr)
         structure->NameMode = LineEdit_0->text();
+
+    QString string_5 = newLabelStatus_objName+QString("%1").arg(NumberPoint);
+    QLabel *Label_1 = findChild<QLabel *>(string_5);
+    if(Label_1!=nullptr)
+        structure->status=Label_1->text();
 }
 bool MainWindow::SetFlagFinishMode(QString string, uint16_t NumberPoint, bool EnabledTime)
 {
@@ -439,29 +476,66 @@ void MainWindow::WindowSpecifyingPoints()
         {
             AddNewPoint(NumberPointMode);
             ui->pushButton_RemovePoint->setEnabled(true);
+            if(SelectedObject!=NoSelected)
+            {
+                PointMode pooint;
+                GetParametrFromForms(&pooint, SelectedObject);
+                AddNullPointToPosition(SelectedObject, NumberPointMode);
+                SendParametrFromForms(pooint, SelectedObject+1);
+            }
             GetParametrFromForms(&ArrayPoint[NumberPointMode], NumberPointMode);
             NumberPointMode++;
+            QScrollBar* verticalBar = ui->scrollArea->verticalScrollBar();
+            verticalBar->setValue(verticalBar->maximum()+verticalBar->pageStep());//Опускаем вертикальный скрол вниз
         }
-        QScrollBar* verticalBar = ui->scrollArea->verticalScrollBar();
-        verticalBar->setValue(verticalBar->maximum()+verticalBar->pageStep());//Опускаем вертикальный скрол вниз
+
 
     });
 
     connect(ui->pushButton_RemovePoint, &QPushButton::clicked, [this]()
     {
-        if(NumberPointMode>1)
+        if(NumberPointMode>1 && SelectedObject>0)
         {
+            if(SelectedObject!=NoSelected)
+            {
+                RemoveNullPointToPosition(SelectedObject, NumberPointMode);
+            }
+
             NumberPointMode--;
             RemoveNewPoint(NumberPointMode);
 
             if(NumberPointMode<=1)
             {
                 NumberPointMode=1;
+
                 ClearParametrStruct(&ArrayPoint[NumberPointMode]);
                 ui->pushButton_RemovePoint->setEnabled(false);
             }
         }
     });
+}
+void MainWindow::AddNullPointToPosition(int numberPoint, int MaxPoint)
+{
+    int startPosition = MaxPoint;
+    for(int j=0; j<(MaxPoint-numberPoint); j++)
+    {
+        for(int i=0; i<(startPosition-numberPoint)-1; i++)
+        {
+            isertRow(startPosition, startPosition-1);
+            startPosition-=1;
+        }
+    }
+}
+void MainWindow::RemoveNullPointToPosition(int numberPoint, int MaxPoint)
+{
+    int startPosition = numberPoint;
+    int l=0;
+    while(l<MaxPoint)
+    {
+        isertRow(startPosition, startPosition+1);
+        startPosition+=1;
+        l++;
+    }
 }
 void MainWindow::RemoveNewPoint(uint16_t NumberPoint)
 {
@@ -513,6 +587,10 @@ void MainWindow::AddNewPoint(uint16_t NumberPoint)
     /*Функция добавления атрибутов для устройств модбас*/
     uint8_t labelNumberPoint_column=0,  spinBoxTime_column=2, spinBoxRUD_column=1, spinBoxPower_column=3, lineEditNameMode_column=4, labelStatus_column=5;
     uint8_t Row = NumberPoint+1;
+    QString styleSheet =
+//            "background-color: lightgreen;"
+    "border: 1px dashed black";
+//                            "font-weight: bold;";
 
     QLabel *newLabelNumberPoint = new QLabel();
     QString string_labelNumberPoint = newLabelNumberPoint_objName+QString("%1").arg(NumberPoint);
@@ -525,6 +603,7 @@ void MainWindow::AddNewPoint(uint16_t NumberPoint)
     QString string_spinBoxID = newSpinBoxTime_objName+QString("%1").arg(NumberPoint);
     newSpinBoxTime->setObjectName(string_spinBoxID);
     newSpinBoxTime->setMinimumSize(100,20);
+    newSpinBoxTime->setMaximumSize(80,20);
     newSpinBoxTime->setSuffix(" мин");
     newSpinBoxTime->setRange(0.f, 1500.f);
     ui->gridLayout_manual->addWidget(newSpinBoxTime, Row, spinBoxTime_column);
@@ -533,6 +612,7 @@ void MainWindow::AddNewPoint(uint16_t NumberPoint)
     QString string_spinBoxRUD = newSpinBoxRUD_objName+QString("%1").arg(NumberPoint);
     newSpinBoxRUD->setObjectName(string_spinBoxRUD);
     newSpinBoxRUD->setMinimumSize(80,20);
+    newSpinBoxRUD->setMaximumSize(80,20);
     newSpinBoxRUD->setRange(0, 100);
     newSpinBoxRUD->setSuffix(" %");
     ui->gridLayout_manual->addWidget(newSpinBoxRUD, Row, spinBoxRUD_column);
@@ -541,6 +621,7 @@ void MainWindow::AddNewPoint(uint16_t NumberPoint)
     QString string_spinBoxPower = newSpinBoxPower_objName+QString("%1").arg(NumberPoint);
     newSpinBoxPower->setObjectName(string_spinBoxPower);
     newSpinBoxPower->setMinimumSize(80,20);
+    newSpinBoxPower->setMaximumSize(80,20);
     newSpinBoxPower->setRange(0, 1000);
     newSpinBoxPower->setPrefix(">");
     newSpinBoxPower->setSuffix(" ЛС");
@@ -549,8 +630,9 @@ void MainWindow::AddNewPoint(uint16_t NumberPoint)
     QLineEdit *newLineEditNameMode = new QLineEdit();
     QString string_lineEditNameMode = newLineEditNameMode_objName+QString("%1").arg(NumberPoint);
     newLineEditNameMode->setObjectName(string_lineEditNameMode);
-    newLineEditNameMode->setText(tr("Режим %1").arg(NumberPoint));
+    newLineEditNameMode->setText(tr(""));
     newLineEditNameMode->setMinimumSize(60,20);
+    newLineEditNameMode->setMaximumSize(60,20);
     ui->gridLayout_manual->addWidget(newLineEditNameMode, Row, lineEditNameMode_column);//добавляем виджет на компановку
 
     QLabel *newLabelStatus = new QLabel();
@@ -561,4 +643,138 @@ void MainWindow::AddNewPoint(uint16_t NumberPoint)
     ui->gridLayout_manual->addWidget(newLabelStatus, Row, labelStatus_column);//добавляем виджет на компановку
 
 
+    QString string_labelHandler = newLabelHandler_objName+QString("%1").arg(NumberPoint);
+    MouseClickHandler *handler = new MouseClickHandler(newLabelNumberPoint);
+    handler->setObjectName(string_labelHandler);
+
+
+    connect(handler, &MouseClickHandler::doubleClicked,
+            [=](Qt::MouseButton button, const QPoint &pos) {
+        if(button == Qt::MouseButton::LeftButton)
+        {
+            setStyle(0, SelectedObject+1, 0);
+            setStyle(1, NumberPoint+1, 0);
+            SelectedObject = NumberPoint;
+            setFocus(); // в конструкторе или при необходимости
+            setFocusPolicy(Qt::StrongFocus); // установите политику фокуса
+
+        }
+
+    });
+    connect(handler, &MouseClickHandler:: rightClicked,
+                 [=](const QPoint &pos) {
+
+                 setStyle(0, NumberPoint+1, 0);
+
+                 SelectedObject=NoSelected;
+//             }
+         });
+    connect(handler, &MouseClickHandler:: leftClicked,
+                 [=](const QPoint &pos) {
+        setFocus(); // в конструкторе или при необходимости
+        setFocusPolicy(Qt::StrongFocus); // установите политику фокуса
+         });
+}
+void MainWindow::setStyle(bool action, int row, int column)
+{
+    QString styleSheet;
+    if(action)
+    {
+        styleSheet="background-color: lightblue;" "border: 1px dashed black"
+                   ;
+    }
+    else
+    {
+        styleSheet="";
+    }
+    QLayoutItem* item = ui->gridLayout_manual->itemAtPosition(row, column);
+    if(item!=nullptr)
+    {
+      item->widget()->setStyleSheet(styleSheet);
+    }
+
+}
+void MainWindow::isertRow(int row_0 ,  int row_1)
+{
+    //функция меняет местами значения в виджетах (условное передвижение вверх-вниз)
+
+    PointMode structure_0, structure_1;
+
+    GetParametrFromForms(&structure_0, row_0);
+    GetParametrFromForms(&structure_1, row_1);
+    SendParametrFromForms(structure_1, row_0);
+    SendParametrFromForms(structure_0, row_1);
+
+}
+void MainWindow::SendParametrFromForms(PointMode structure, uint16_t NumberPoint)
+{
+//    QString string_0 = newLabelNumberPoint_objName+QString("%1").arg(NumberPoint);
+//    QLabel *Label_0 = findChild<QLabel *>(string_0);
+//    Label_0->setText(structure->number);
+//    //    delete RemoveLabel_0;
+
+    QString string_1 = newSpinBoxTime_objName+QString("%1").arg(NumberPoint);
+    QDoubleSpinBox *SpinBox_0 = findChild<QDoubleSpinBox *>(string_1);
+    if(SpinBox_0!=nullptr)
+        SpinBox_0->setValue(structure.Time);
+
+    //    delete RemoveSpinBox_0;
+
+    QString string_2 = newSpinBoxRUD_objName+QString("%1").arg(NumberPoint);
+    QSpinBox *SpinBox_1 = findChild<QSpinBox *>(string_2);
+    if(SpinBox_1!=nullptr)
+        SpinBox_1->setValue(structure.RUD);
+    //    delete RemoveSpinBox_1;
+
+    QString string_3 = newSpinBoxPower_objName+QString("%1").arg(NumberPoint);
+    QDoubleSpinBox *SpinBox_2 = findChild<QDoubleSpinBox *>(string_3);
+    if(SpinBox_2!=nullptr)
+        SpinBox_2->setValue(structure.PowerDVS);
+    //    delete RemoveSpinBox_2;
+
+    QString string_4 = newLineEditNameMode_objName+QString("%1").arg(NumberPoint);
+    QLineEdit *LineEdit_0 = findChild<QLineEdit *>(string_4);
+    if(LineEdit_0!=nullptr)
+        LineEdit_0->setText(structure.NameMode);
+
+    //    delete RemoveLineEdit_0;
+
+    QString string_5 = newLabelStatus_objName+QString("%1").arg(NumberPoint);
+    QLabel *Label_1 = findChild<QLabel *>(string_5);
+    if(Label_1!=nullptr)
+        Label_1->setText(structure.status);
+    //    delete RemoveLabel_1;
+}
+
+void MainWindow::keyPressEvent(QKeyEvent *event)
+{
+    int key = event->key();
+//    Qt::KeyboardModifiers modifiers = event->modifiers();
+
+    switch (key) {
+    case Qt::Key_Up:
+    {
+        if(SelectedObject>0)
+        {
+            isertRow(SelectedObject, SelectedObject-1);
+            setStyle(0, SelectedObject+1, 0);
+            SelectedObject-=1;
+            setStyle(1, SelectedObject+1, 0);
+        }
+        event->accept();
+    }break;
+    case Qt::Key_Down:
+    {
+        if((SelectedObject<GetNumberPointMode()-1)&&SelectedObject>=0)
+        {
+           isertRow(SelectedObject, SelectedObject+1);
+           setStyle(0, SelectedObject+1, 0);
+           SelectedObject+=1;
+           setStyle(1, SelectedObject+1, 0);
+        }
+        event->accept();
+    }break;
+    default:break;
+//         QLabel::keyPressEvent(event);
+    }
 }

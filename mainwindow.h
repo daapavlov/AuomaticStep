@@ -6,12 +6,13 @@
 #include "settingsmodbus.h"
 #include "qcustomplot.h"
 #include "settingsusertime.h"
-
+#include "mouseclickhandler.h"
 #include <QMouseEvent>
+#include <QKeyEvent>
 
 
 QT_BEGIN_NAMESPACE
-
+#define NoSelected  -0xffff
 
 class SettingsModbus;
 namespace Ui { class MainWindow; }
@@ -40,20 +41,24 @@ private:
     QTimer *timer_sendRUD = nullptr;
     QTimer timer_readPointMode;
     QThread *threadFile = new QThread();//Создаем новый поток
+//    MouseClickHandler *handler;
 
     uint16_t NumberPointMode=1;
     int CurrentRegime=0;
     bool sendData_RUD=0;
     struct PointMode
     {
+        QString number = 0;
         uint8_t RUD=0;
         double Time=0;
         double PowerDVS=0;
         QString NameMode;
+        QString status;
     };
-    PointMode ArrayPoint[100];
+    PointMode ArrayPoint[500];
 
     //Названия объектов в панели управления РУД
+    QString newLabelHandler_objName = "label_Handler_";
     QString newLabelNumberPoint_objName = "label_numberPoint_";
     QString newSpinBoxTime_objName = "spinBoxTime_";
     QString newSpinBoxRUD_objName = "spinBoxRUD_";
@@ -68,12 +73,15 @@ private:
 
     SettingsUserTime *m_userTime = new SettingsUserTime();
 
-
+    int SelectedObject=NoSelected;
 
     void AddNewPoint(uint16_t NumberPoint);
+    void AddNullPointToPosition(int numberPoint, int MaxPoint);
+    void RemoveNullPointToPosition(int numberPoint, int MaxPoint);
     void RemoveNewPoint(uint16_t NumberPoint);
     void WindowSpecifyingPoints();
     void GetParametrFromForms(PointMode *structure, uint16_t NumberPoint);
+    void SendParametrFromForms(PointMode structure, uint16_t NumberPoint);
     void ClearParametrStruct(PointMode *structure);
     void SplittingIntoDots(PointMode structure_1, QVector<double> *vector1, QVector<double> *vector2);
     uint16_t GetNumberPointMode();
@@ -85,7 +93,11 @@ private:
     void RemoveDataPointChart(QCustomPlot *custom_plot);
     void setupNearestPointTracking();
     void onMouseMoveNearestPoint(QMouseEvent* event);
+    void keyPressEvent(QKeyEvent *event);
     void playWindowsSystemSound(int type);
+    void removeRow(QGridLayout *grid, int Row);
+    void isertRow(int NumberPoint, int newRow);
+    void setStyle(bool action, int row, int column);
 
 private slots:
     void AddPointToChrts();
