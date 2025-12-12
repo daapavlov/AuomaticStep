@@ -26,25 +26,13 @@ MainWindow::MainWindow(QWidget *parent)
     AddPlotToWindow(m_customPlot);
     WindowSpecifyingPoints();//Функция создает в панели задания режимов начальную точку
     setupNearestPointTracking();
-
-    MouseClickHandler *handler_scrollArea = new MouseClickHandler(ui->scrollArea);
-    connect(handler_scrollArea, &MouseClickHandler:: leftClicked,
-                 [=](const QPoint &pos) {
-        setFocus(); // в конструкторе или при необходимости
-        setFocusPolicy(Qt::StrongFocus); // установите политику фокуса
-         });
-    connect(handler_scrollArea, &MouseClickHandler:: rightClicked,
-                 [=](const QPoint &pos) {
-
-                 setStyle(0, SelectedObject+1, 0);
-
-                 SelectedObject=-1;
-//             }
-         });
+    ConnectMouse();
 
     connect(ui->actionModBus_RTU, &QAction::triggered, m_settingsModbus, &SettingsModbus::show);
+    connect(ui->actionModBus_RTU, &QAction::triggered, m_settingsModbus, &SettingsModbus::UpdatePortName);
     connect(ui->action_times, &QAction::triggered, m_userTime, &SettingsUserTime::show);
-
+    connect(ui->action_openFile, &QAction::triggered, this, &MainWindow::OpenProject);
+    connect(ui->action_saveFile, &QAction::triggered, this, &MainWindow::SaveProject);
     connect(ui->pushButton_writePoints, &QPushButton::clicked, this, &MainWindow::AddPointToChrts);
 
     connect(ui->pushButton_start, &QPushButton::clicked, [this]
@@ -72,8 +60,7 @@ MainWindow::MainWindow(QWidget *parent)
 //    });
     connect(timer_sendRUD, &QTimer::timeout, this, &MainWindow::SendRud_timeout);
     connect(timer_mode, &QTimer::timeout, this, &MainWindow::Mode_timeout);
-    connect(timer_modeMessage, &QTimer::timeout, this, &MainWindow::Mode_Message);
-
+    connect(timer_modeMessage, &QTimer::timeout, this, &MainWindow::Mode_MessageTheEnd);
 
 }
 
@@ -82,7 +69,79 @@ MainWindow::~MainWindow()
 {
     delete ui;
 }
-void MainWindow::Mode_Message()
+void MainWindow::ConnectMouse()
+{
+    MouseClickHandler *handler_scrollArea = new MouseClickHandler(ui->scrollArea);
+    connect(handler_scrollArea, &MouseClickHandler:: leftClicked,
+                 [=](const QPoint &pos) {
+        setFocus(); // в конструкторе или при необходимости
+        setFocusPolicy(Qt::StrongFocus); // установите политику фокуса
+         });
+    connect(handler_scrollArea, &MouseClickHandler:: rightClicked,
+                 [=](const QPoint &pos) {
+
+                 setStyle(0, SelectedObject+1, 0);
+
+                 SelectedObject=-1;
+//             }
+         });
+}
+void MainWindow::OpenProject()
+{
+    QMap <QString, QString> SettingsProject;
+    PointMode t_pointMode;
+    QString cleanData;
+    if(!m_fileDialog->ReadFileSettings("", SettingsProject))
+    {
+        QMessageBox::critical(this, "Ошибка!", "Не удалось открыть файл");
+    }
+    int QuantityPoint = GetNumberEndPointMode();
+
+    for(int i=0; i<QuantityPoint; i++)
+    {
+        CollbackButtonRemovePoint();
+    }
+    NumberPointMode=0;
+    for(int i=0; i<SettingsProject["quantityPointMode"].toInt(); i++)
+    {
+//        AddNewPoint(i);
+
+        CollbackButtonAddPoint();
+        QStringList parts = SettingsProject[QString("point_%1").arg(i)].split(';');
+        if (parts.size() >= 4) {
+            t_pointMode.RUD = parts[0].trimmed().toInt();
+            t_pointMode.Time = parts[1].trimmed().toDouble();
+            t_pointMode.PowerDVS = parts[2].trimmed().toDouble();
+            t_pointMode.NameMode = parts[3].trimmed();
+            t_pointMode.status = "Не выполнен";
+        } else {
+
+        }
+        SendParametrFromForms(t_pointMode, i);
+    }
+
+    NumberPointMode=SettingsProject["quantityPointMode"].toInt();
+}
+void MainWindow::SaveProject()
+{
+    QMap <QString, QString> SettingsProject;
+    PointMode t_pointMode;
+    SettingsProject["quantityPointMode"]=QString("%1").arg(GetNumberEndPointMode());
+    for(int i=0; i<GetNumberEndPointMode(); i++)
+    {
+        GetParametrFromForms(&t_pointMode, i);
+        if(t_pointMode.NameMode=="")
+        {
+            t_pointMode.NameMode=" ";
+        }
+        SettingsProject[QString("point_%1").arg(i)]=QString("%1;%2;%3;%4\n").arg(t_pointMode.RUD).arg(t_pointMode.Time).arg(t_pointMode.PowerDVS).arg(t_pointMode.NameMode);
+    }
+    if(!m_fileDialog->WriteFileSettings("", SettingsProject))
+    {
+        QMessageBox::critical(this, "Ошибка!", "Не удалось сохранить файл");
+    }
+}
+void MainWindow::Mode_MessageTheEnd()
 {
     timer_modeMessage->stop();
     MessageBeep(MB_OK);
@@ -108,7 +167,7 @@ void MainWindow::Mode_timeout()
         }
 
 
-        if(CurrentRegime>=GetNumberPointMode())
+        if(CurrentRegime>=GetNumberEndPointMode())
         {
             Mode_stop();
             //РУД в 0
@@ -120,7 +179,7 @@ void MainWindow::Mode_timeout()
             timer_modeMessage->start(interval-(m_userTime->GetParametr(2)*60000));
             ui->plainTextEdit_status->appendPlainText(QString("%1Выполняется точка %2").arg(newTime.toString("hh:mm:ss ")).arg(CurrentRegime));
             SetFlagFinishMode("Выполняется", CurrentRegime, 0);
-            if(CurrentRegime == GetNumberPointMode()-1)
+            if(CurrentRegime == GetNumberEndPointMode()-1)
             {
                 ui->pushButton_RemovePoint->setEnabled(false);
             }
@@ -169,7 +228,7 @@ void MainWindow::Mode_stop()
     CurrentRegime=0;
     SendRud_timeout();
     ui->plainTextEdit_status->appendPlainText(QString("%1Выполнена остановка цикла").arg(newTime.toString("hh:mm:ss ")));
-    for(int i=0;i<GetNumberPointMode();i++)
+    for(int i=0;i<GetNumberEndPointMode();i++)
     {
         SetFlagFinishMode("Не выполнен", i, 1);
     }
@@ -431,16 +490,17 @@ void MainWindow::AddPointToChrts()
     DataChartY.clear();
     RemoveDataPointChart(m_customPlot);
     int i=0;
-    while(i<GetNumberPointMode())
+    while(i<GetNumberEndPointMode())
     {
         GetParametrFromForms(&ArrayPoint[i], i);
-        points.insert(ArrayPoint[i].RUD, ArrayPoint[i].NameMode);
+//        points.insert(ArrayPoint[i].RUD, ArrayPoint[i].NameMode);
+        points.insert(ArrayPoint[i].PowerDVS, ArrayPoint[i].NameMode);//
         SplittingIntoDots(ArrayPoint[i], &DataChartX, &DataChartY);
         i++;
     }
     AddNewDataPointrChart(m_customPlot, DataChartX, DataChartY, points);
 }
-uint16_t MainWindow::GetNumberPointMode()
+uint16_t MainWindow::GetNumberEndPointMode()
 {
     return NumberPointMode;
 }
@@ -462,57 +522,55 @@ void MainWindow::SplittingIntoDots(PointMode structure_1, QVector<double> *vecto
         vector2->append(Rud);
     }
 }
+void MainWindow::CollbackButtonAddPoint()
+{
+    if(NumberPointMode>=0 && NumberPointMode<255)
+    {
+        AddNewPoint(NumberPointMode);
+        ui->pushButton_RemovePoint->setEnabled(true);
+        if(SelectedObject!=NoSelected)
+        {
+            PointMode pooint;
+            GetParametrFromForms(&pooint, SelectedObject);
+            AddNullPointToPosition(SelectedObject, NumberPointMode);
+            SendParametrFromForms(pooint, SelectedObject+1);
+        }
+        GetParametrFromForms(&ArrayPoint[NumberPointMode], NumberPointMode);
+        NumberPointMode++;
+        QScrollBar* verticalBar = ui->scrollArea->verticalScrollBar();
+        verticalBar->setValue(verticalBar->maximum()+verticalBar->pageStep());//Опускаем вертикальный скрол вниз
+    }
+}
+void MainWindow::CollbackButtonRemovePoint()
+{
+    if(NumberPointMode>0)
+    {
+        if(SelectedObject!=NoSelected)
+        {
+            RemoveNullPointToPosition(SelectedObject, NumberPointMode);
+        }
+
+        NumberPointMode--;
+        RemoveNewPoint(NumberPointMode);
+        ClearParametrStruct(&ArrayPoint[NumberPointMode]);
+
+        if(NumberPointMode<=0)
+        {
+            NumberPointMode=0;
+            ui->pushButton_RemovePoint->setEnabled(false);
+        }
+    }
+}
 void MainWindow::WindowSpecifyingPoints()
 {
     /*Начальная инициализация*/
-    AddNewPoint(0);
-//    GetParametrToForms(&ArrayPoint[0], 0);
+//    AddNewPoint(0);
+    CollbackButtonAddPoint();
     ui->pushButton_RemovePoint->setEnabled(false);
 
-    connect(ui->pushButton_AddPoint, &QPushButton::clicked, [this]()
-    {
+    connect(ui->pushButton_AddPoint, &QPushButton::clicked, this, &MainWindow::CollbackButtonAddPoint);
 
-        if(NumberPointMode>=1 && NumberPointMode<255)
-        {
-            AddNewPoint(NumberPointMode);
-            ui->pushButton_RemovePoint->setEnabled(true);
-            if(SelectedObject!=NoSelected)
-            {
-                PointMode pooint;
-                GetParametrFromForms(&pooint, SelectedObject);
-                AddNullPointToPosition(SelectedObject, NumberPointMode);
-                SendParametrFromForms(pooint, SelectedObject+1);
-            }
-            GetParametrFromForms(&ArrayPoint[NumberPointMode], NumberPointMode);
-            NumberPointMode++;
-            QScrollBar* verticalBar = ui->scrollArea->verticalScrollBar();
-            verticalBar->setValue(verticalBar->maximum()+verticalBar->pageStep());//Опускаем вертикальный скрол вниз
-        }
-
-
-    });
-
-    connect(ui->pushButton_RemovePoint, &QPushButton::clicked, [this]()
-    {
-        if(NumberPointMode>1 && SelectedObject>0)
-        {
-            if(SelectedObject!=NoSelected)
-            {
-                RemoveNullPointToPosition(SelectedObject, NumberPointMode);
-            }
-
-            NumberPointMode--;
-            RemoveNewPoint(NumberPointMode);
-
-            if(NumberPointMode<=1)
-            {
-                NumberPointMode=1;
-
-                ClearParametrStruct(&ArrayPoint[NumberPointMode]);
-                ui->pushButton_RemovePoint->setEnabled(false);
-            }
-        }
-    });
+    connect(ui->pushButton_RemovePoint, &QPushButton::clicked, this, &MainWindow::CollbackButtonRemovePoint);
 }
 void MainWindow::AddNullPointToPosition(int numberPoint, int MaxPoint)
 {
@@ -765,7 +823,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
     }break;
     case Qt::Key_Down:
     {
-        if((SelectedObject<GetNumberPointMode()-1)&&SelectedObject>=0)
+        if((SelectedObject<GetNumberEndPointMode()-1)&&SelectedObject>=0)
         {
            isertRow(SelectedObject, SelectedObject+1);
            setStyle(0, SelectedObject+1, 0);

@@ -9,6 +9,7 @@
 #include "mouseclickhandler.h"
 #include <QMouseEvent>
 #include <QKeyEvent>
+#include <filedialog.h>
 
 
 QT_BEGIN_NAMESPACE
@@ -43,7 +44,7 @@ private:
     QThread *threadFile = new QThread();//Создаем новый поток
 //    MouseClickHandler *handler;
 
-    uint16_t NumberPointMode=1;
+    uint16_t NumberPointMode=0;
     int CurrentRegime=0;
     bool sendData_RUD=0;
     struct PointMode
@@ -73,9 +74,13 @@ private:
 
     SettingsUserTime *m_userTime = new SettingsUserTime();
 
+    fileDialog *m_fileDialog = new fileDialog();
+
     int SelectedObject=NoSelected;
 
     void AddNewPoint(uint16_t NumberPoint);
+    void CollbackButtonAddPoint();
+    void CollbackButtonRemovePoint();
     void AddNullPointToPosition(int numberPoint, int MaxPoint);
     void RemoveNullPointToPosition(int numberPoint, int MaxPoint);
     void RemoveNewPoint(uint16_t NumberPoint);
@@ -84,7 +89,7 @@ private:
     void SendParametrFromForms(PointMode structure, uint16_t NumberPoint);
     void ClearParametrStruct(PointMode *structure);
     void SplittingIntoDots(PointMode structure_1, QVector<double> *vector1, QVector<double> *vector2);
-    uint16_t GetNumberPointMode();
+    uint16_t GetNumberEndPointMode();
     bool SetFlagFinishMode(QString string, uint16_t NumberPoint, bool EnabledTime);
     uint16_t GetParametrRUD(uint16_t NumberPoint);
 
@@ -92,6 +97,7 @@ private:
     void AddNewDataPointrChart(QCustomPlot *custom_plot, QVector<double> DataX, QVector <double> DataY, QMap <double, QString> point);
     void RemoveDataPointChart(QCustomPlot *custom_plot);
     void setupNearestPointTracking();
+    void ConnectMouse();
     void onMouseMoveNearestPoint(QMouseEvent* event);
     void keyPressEvent(QKeyEvent *event);
     void playWindowsSystemSound(int type);
@@ -105,6 +111,8 @@ private slots:
     void Mode_timeout();
     void Mode_stop();
     void Mode_start();
-    void Mode_Message();
+    void Mode_MessageTheEnd();
+    void OpenProject();
+    void SaveProject();
 };
 #endif // MAINWINDOW_H

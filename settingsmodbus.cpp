@@ -26,6 +26,10 @@ SettingsModbus::~SettingsModbus()
 {
     delete ui;
 }
+void SettingsModbus::UpdatePortName()
+{
+    m_settingsDialog->SettingPortName();
+}
 bool SettingsModbus::SendData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr, uint16_t *Data, uint16_t DataSize)
 {
     /*функция отправки данных в слейв

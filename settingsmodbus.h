@@ -30,6 +30,7 @@ public:
     bool SendData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr, uint16_t *Data, uint16_t DataSize);
     bool AcceptData_ModbusRTU(uint16_t ServerEdit, uint16_t StartAddr, uint16_t counterAddr);
     QVector <uint16_t> GetModbusData_Receive();
+    void UpdatePortName();
 
     struct Device//структура устройства, которое будет в сети модбас
     {

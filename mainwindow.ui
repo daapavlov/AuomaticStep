@@ -34,7 +34,7 @@
            <x>0</x>
            <y>0</y>
            <width>952</width>
-           <height>603</height>
+           <height>590</height>
           </rect>
          </property>
         </widget>
@@ -86,7 +86,7 @@
              <x>0</x>
              <y>0</y>
              <width>527</width>
-             <height>289</height>
+             <height>278</height>
             </rect>
            </property>
            <layout class="QVBoxLayout" name="verticalLayout">
@@ -191,7 +191,7 @@
            </layout>
           </widget>
          </widget>
-         <widget class="QWidget" name="">
+         <widget class="QWidget" name="layoutWidget">
           <layout class="QHBoxLayout" name="horizontalLayout_2">
            <property name="spacing">
             <number>6</number>
@@ -306,8 +306,10 @@
    </property>
    <widget class="QMenu" name="menu_file">
     <property name="title">
-     <string>Файл</string>
+     <string>Проект</string>
     </property>
+    <addaction name="action_openFile"/>
+    <addaction name="action_saveFile"/>
    </widget>
    <widget class="QMenu" name="menu_settings">
     <property name="title">
@@ -333,6 +335,16 @@
   <action name="action_times">
    <property name="text">
     <string>Настройка временных интервалов</string>
+   </property>
+  </action>
+  <action name="action_openFile">
+   <property name="text">
+    <string>Открыть</string>
+   </property>
+  </action>
+  <action name="action_saveFile">
+   <property name="text">
+    <string>Сохранить</string>
    </property>
   </action>
  </widget>
