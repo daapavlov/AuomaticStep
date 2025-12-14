@@ -22,11 +22,13 @@ MainWindow::MainWindow(QWidget *parent)
     ui->setupUi(this);
     m_settingsModbus = new SettingsModbus();
     timer_sendRUD = new QTimer();
-//    showMaximized();
+    showMaximized();
     AddPlotToWindow(m_customPlot);
     WindowSpecifyingPoints();//Функция создает в панели задания режимов начальную точку
     setupNearestPointTracking();
     ConnectMouse();
+
+
 
     connect(ui->actionModBus_RTU, &QAction::triggered, m_settingsModbus, &SettingsModbus::show);
     connect(ui->actionModBus_RTU, &QAction::triggered, m_settingsModbus, &SettingsModbus::UpdatePortName);
@@ -34,17 +36,22 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->action_openFile, &QAction::triggered, this, &MainWindow::OpenProject);
     connect(ui->action_saveFile, &QAction::triggered, this, &MainWindow::SaveProject);
     connect(ui->pushButton_writePoints, &QPushButton::clicked, this, &MainWindow::AddPointToChrts);
-
+    connect(ui->pushButton_pause, &QPushButton::clicked, this, &MainWindow::Mode_pause);
     connect(ui->pushButton_start, &QPushButton::clicked, [this]
     {
-
-        if(ui->pushButton_start->text()=="Запустить")
+        if(ui->pushButton_start->text()=="Остановить")
         {
-            Mode_start();
+
+            Mode_stop();
         }
         else
         {
-            Mode_stop();
+            if(SelectedObject!=NoSelected)
+            {
+                CurrentRegime = SelectedObject;
+                BufferSelected=CurrentRegime;
+            }
+            Mode_start();
         }
     });
 
@@ -69,20 +76,21 @@ MainWindow::~MainWindow()
 {
     delete ui;
 }
+
 void MainWindow::ConnectMouse()
 {
     MouseClickHandler *handler_scrollArea = new MouseClickHandler(ui->scrollArea);
     connect(handler_scrollArea, &MouseClickHandler:: leftClicked,
-                 [=](const QPoint &pos) {
+                 [=]() {
         setFocus(); // в конструкторе или при необходимости
         setFocusPolicy(Qt::StrongFocus); // установите политику фокуса
          });
     connect(handler_scrollArea, &MouseClickHandler:: rightClicked,
-                 [=](const QPoint &pos) {
+                 [=]() {
 
                  setStyle(0, SelectedObject+1, 0);
 
-                 SelectedObject=-1;
+                 SelectedObject=NoSelected;
 //             }
          });
 }
@@ -104,8 +112,6 @@ void MainWindow::OpenProject()
     NumberPointMode=0;
     for(int i=0; i<SettingsProject["quantityPointMode"].toInt(); i++)
     {
-//        AddNewPoint(i);
-
         CollbackButtonAddPoint();
         QStringList parts = SettingsProject[QString("point_%1").arg(i)].split(';');
         if (parts.size() >= 4) {
@@ -143,8 +149,47 @@ void MainWindow::SaveProject()
 }
 void MainWindow::Mode_MessageTheEnd()
 {
+    QDateTime newTime = QDateTime::currentDateTime();
     timer_modeMessage->stop();
-    MessageBeep(MB_OK);
+    m_player->PlayerMusic(path_music_2, 100);
+    ui->plainTextEdit_status->appendPlainText(QString("%1До смены режима %2 осталось %3 мин").arg(newTime.toString("hh:mm:ss ")).arg(CurrentRegime-1).arg(m_userTime->GetParametr(2)));
+
+}
+void MainWindow::Mode_pause()
+{
+
+    QDateTime newTime = QDateTime::currentDateTime();
+    if(timer_mode->isActive())
+    {
+        ui->pushButton_pause->setText("Продолжить");
+        timeTheEnd = timer_mode->remainingTime();
+        timer_mode->stop();
+        if(timer_modeMessage->isActive())
+        {
+            timer_modeMessage->stop();
+        }
+
+        int timeHear = (timeTheEnd/1000)/3600;
+        int timeMin = (timeTheEnd/60000-timeHear*60);
+        int timeDoubleSek = (timeTheEnd/1000-timeHear*3600-timeMin*60);
+        ui->plainTextEdit_status->appendPlainText(QString("%1Точка %2 поставлена на паузу. До конца режима осталось времени %3 часов %4 мин %5 секунд ").arg(newTime.toString("hh:mm:ss ")).arg(CurrentRegime-1)
+                                                  .arg(timeHear).arg(timeMin).arg(timeDoubleSek));
+        SetFlagFinishMode("На паузе", CurrentRegime-1, 0);
+    }
+    else
+    {
+        ui->pushButton_pause->setText("Пауза");
+        timer_mode->start(timeTheEnd);
+        if(m_userTime->GetParametr(2)>0 && timeTheEnd-(m_userTime->GetParametr(2)*60000)>0)
+        {
+          timer_modeMessage->start(timeTheEnd-(m_userTime->GetParametr(2)*60000));
+        }
+        m_player->PlayerMusic(path_music_1, 100);
+        SetFlagFinishMode("Выполняется", CurrentRegime-1, 0);
+        ui->plainTextEdit_status->appendPlainText(QString("%1Продолжается режим %2").arg(newTime.toString("hh:mm:ss ")).arg(CurrentRegime-1));
+
+
+    }
 
 }
 void MainWindow::Mode_timeout()
@@ -153,19 +198,19 @@ void MainWindow::Mode_timeout()
 
     /*функция отмеряет заданный режим*/
 
-
     PointMode stru;
     GetParametrFromForms(&stru, CurrentRegime);
     int interval = stru.Time*60000;//в миллисекундх
     if(sendData_RUD==1)
     {
-
-        timer_mode->setInterval(interval+500);
-        if(CurrentRegime>0)
+        timer_mode->setInterval(interval);
+        if(CurrentRegime>BufferSelected)
         {
            SetFlagFinishMode("Выполнен", CurrentRegime-1, 0);
         }
 
+        setStyle(0, SelectedObject+1, 0);
+        SelectedObject=NoSelected;
 
         if(CurrentRegime>=GetNumberEndPointMode())
         {
@@ -174,9 +219,12 @@ void MainWindow::Mode_timeout()
         }
         else
         {
-//            PlaySound(TEXT("SystemAsterisk"), NULL, SND_ALIAS | SND_ASYNC | SND_NODEFAULT);
-            MessageBeep(MB_OK);
-            timer_modeMessage->start(interval-(m_userTime->GetParametr(2)*60000));
+            m_player->PlayerMusic(path_music_1, 100);
+            if(m_userTime->GetParametr(2)>0 && interval-(m_userTime->GetParametr(2)*60000)>0)
+            {
+                timer_modeMessage->start(interval-(m_userTime->GetParametr(2)*60000));
+            }
+
             ui->plainTextEdit_status->appendPlainText(QString("%1Выполняется точка %2").arg(newTime.toString("hh:mm:ss ")).arg(CurrentRegime));
             SetFlagFinishMode("Выполняется", CurrentRegime, 0);
             if(CurrentRegime == GetNumberEndPointMode()-1)
@@ -192,14 +240,16 @@ void MainWindow::Mode_start()
 {
     QDateTime newTime = QDateTime::currentDateTime();
     PointMode mode;
-    GetParametrFromForms(&mode, 0);
+    GetParametrFromForms(&mode, CurrentRegime);
 
     if(m_settingsModbus->Flags_setSettings_comPort==1)
     {
+        ui->pushButton_pause->setEnabled(true);
         if(mode.Time>0)
         {
             ui->actionModBus_RTU->setEnabled(false);
             ui->action_times->setEnabled(false);
+            ui->menu_file->setEnabled(false);
             ui->plainTextEdit_status->clear();
             timer_mode->start(m_userTime->GetParametr(0)*1000);
             timer_sendRUD->start(m_userTime->GetParametr(1));
@@ -207,7 +257,7 @@ void MainWindow::Mode_start()
         }
         else
         {
-            ui->plainTextEdit_status->appendPlainText(QString("%1Не удалось запустить цикл. Проверьте первого длительность цикла").arg(newTime.toString("hh:mm:ss ")));
+            ui->plainTextEdit_status->appendPlainText(QString("%1Не удалось запустить цикл. Проверьте длительность цикла %2").arg(newTime.toString("hh:mm:ss ").arg(CurrentRegime)));
         }
     }
     else
@@ -220,8 +270,9 @@ void MainWindow::Mode_stop()
 {
     ui->actionModBus_RTU->setEnabled(true);
     ui->action_times->setEnabled(true);
-//    PlaySound(TEXT("SystemAsterisk"), NULL, SND_ALIAS | SND_ASYNC | SND_NODEFAULT);
-    MessageBeep(MB_OK);
+    ui->pushButton_pause->setEnabled(false);
+    ui->pushButton_pause->setText("Пауза");
+    m_player->PlayerMusic(path_music_1, 100);
     QDateTime newTime = QDateTime::currentDateTime();
     timer_mode->stop();
     timer_sendRUD->stop();
@@ -266,7 +317,7 @@ void MainWindow::SendRud_timeout()
                     }
                     else
                     {
-                        sendData_RUD=1;
+                        sendData_RUD=1;//флаг, указывающий, что разрешено начало цикла, соединение с руд установлено
                     }
                 }
             }
@@ -363,7 +414,7 @@ void MainWindow::AddPlotToWindow(QCustomPlot *custom_plot)
 {
     ui->scrollArea_charts->setWidget(custom_plot);
     custom_plot->addGraph();
-    custom_plot->yAxis->setRange(0, 110);
+    custom_plot->yAxis->setRange(0, 150);
     custom_plot->xAxis->setRange(0, 50);
     custom_plot->graph(0)->setPen((QPen(Qt::black, 4)));
 
@@ -372,7 +423,7 @@ void MainWindow::AddPlotToWindow(QCustomPlot *custom_plot)
     custom_plot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom);
 
     // Настраиваем оси для масштабирования и перемещения
-    custom_plot->axisRect()->setRangeDrag(Qt::Horizontal );//| Qt::Vertical
+    custom_plot->axisRect()->setRangeDrag(Qt::Horizontal);//| Qt::Vertical
     custom_plot->axisRect()->setRangeZoom(Qt::Horizontal);// | Qt::Vertical);
 
     // Плавное масштабирование к курсору мыши
@@ -493,8 +544,7 @@ void MainWindow::AddPointToChrts()
     while(i<GetNumberEndPointMode())
     {
         GetParametrFromForms(&ArrayPoint[i], i);
-//        points.insert(ArrayPoint[i].RUD, ArrayPoint[i].NameMode);
-        points.insert(ArrayPoint[i].PowerDVS, ArrayPoint[i].NameMode);//
+        points.insert(ArrayPoint[i].PowerDVS, ArrayPoint[i].NameMode);
         SplittingIntoDots(ArrayPoint[i], &DataChartX, &DataChartY);
         i++;
     }
@@ -515,7 +565,7 @@ void MainWindow::SplittingIntoDots(PointMode structure_1, QVector<double> *vecto
 
     double MinRange_OX = Min*60.0f;//в секундах
     double Range_OX = (structure_1.Time)*60.0f;//в секундах
-    double Rud = structure_1.RUD;
+    double Rud = structure_1.PowerDVS;
     for(double i=MinRange_OX; i<(MinRange_OX+Range_OX)+1.0f; i+=1.0f)
     {
         vector1->append(i/60.0f);//чтобы отображать точки на графике в минутах
@@ -537,8 +587,12 @@ void MainWindow::CollbackButtonAddPoint()
         }
         GetParametrFromForms(&ArrayPoint[NumberPointMode], NumberPointMode);
         NumberPointMode++;
-        QScrollBar* verticalBar = ui->scrollArea->verticalScrollBar();
-        verticalBar->setValue(verticalBar->maximum()+verticalBar->pageStep());//Опускаем вертикальный скрол вниз
+        if(SelectedObject==NoSelected)
+        {
+            QScrollBar* verticalBar = ui->scrollArea->verticalScrollBar();
+            verticalBar->setValue(verticalBar->maximum());//Опускаем вертикальный скрол вниз
+        }
+
     }
 }
 void MainWindow::CollbackButtonRemovePoint()
@@ -559,14 +613,20 @@ void MainWindow::CollbackButtonRemovePoint()
             NumberPointMode=0;
             ui->pushButton_RemovePoint->setEnabled(false);
         }
+        if(SelectedObject==NoSelected)
+        {
+            QScrollBar* verticalBar = ui->scrollArea->verticalScrollBar();
+
+            verticalBar->setValue(verticalBar->maximum());//Опускаем вертикальный скрол вниз
+        }
     }
 }
 void MainWindow::WindowSpecifyingPoints()
 {
     /*Начальная инициализация*/
-//    AddNewPoint(0);
     CollbackButtonAddPoint();
     ui->pushButton_RemovePoint->setEnabled(false);
+    ui->pushButton_pause->setEnabled(false);
 
     connect(ui->pushButton_AddPoint, &QPushButton::clicked, this, &MainWindow::CollbackButtonAddPoint);
 
@@ -616,7 +676,16 @@ void MainWindow::RemoveNewPoint(uint16_t NumberPoint)
     QSpinBox *RemoveSpinBox_1 = findChild<QSpinBox *>(string_2);
     if(RemoveSpinBox_1!=nullptr)
     {
+//        disconnect(RemoveSpinBox_1, QOverload<int>::of( &QSpinBox::valueChanged), 0,0);
         delete RemoveSpinBox_1;
+    }
+
+    QString string_timerSetColor_spinBox = "timer_"+QString("%1").arg(NumberPoint);
+    QTimer *RemovetimerSetColor_spinBox = findChild<QTimer *>(string_timerSetColor_spinBox);
+    if(RemovetimerSetColor_spinBox!=nullptr)
+    {
+//        disconnect(RemovetimerSetColor_spinBox, &QTimer::timeout,0,0);
+        delete RemovetimerSetColor_spinBox;
     }
 
     QString string_3 = newSpinBoxPower_objName+QString("%1").arg(NumberPoint);
@@ -675,6 +744,27 @@ void MainWindow::AddNewPoint(uint16_t NumberPoint)
     newSpinBoxRUD->setSuffix(" %");
     ui->gridLayout_manual->addWidget(newSpinBoxRUD, Row, spinBoxRUD_column);
 
+    QTimer *timerSetColor_spinBox = new QTimer();
+    QString string_timerSetColor_spinBox = "timer_"+QString("%1").arg(NumberPoint);
+    timerSetColor_spinBox->setObjectName(string_timerSetColor_spinBox);
+
+    connect(newSpinBoxRUD, QOverload<int>::of( &QSpinBox::valueChanged), [=](int value)
+    {
+        newSpinBoxRUD->setStyleSheet("QSpinBox { border: 2px solid red; }");
+        if(timerSetColor_spinBox->isActive())
+        {
+            timerSetColor_spinBox->stop();
+        }
+        timerSetColor_spinBox->start(1000);
+
+    });
+
+    connect(timerSetColor_spinBox, &QTimer::timeout, [=]
+    {
+        timerSetColor_spinBox->stop();
+        newSpinBoxRUD->setStyleSheet(" ");
+    });
+
     QDoubleSpinBox *newSpinBoxPower = new QDoubleSpinBox();//создаем объект указывающий на адрес слейва
     QString string_spinBoxPower = newSpinBoxPower_objName+QString("%1").arg(NumberPoint);
     newSpinBoxPower->setObjectName(string_spinBoxPower);
@@ -707,12 +797,17 @@ void MainWindow::AddNewPoint(uint16_t NumberPoint)
 
 
     connect(handler, &MouseClickHandler::doubleClicked,
-            [=](Qt::MouseButton button, const QPoint &pos) {
+            [=](Qt::MouseButton button) {
         if(button == Qt::MouseButton::LeftButton)
         {
             setStyle(0, SelectedObject+1, 0);
             setStyle(1, NumberPoint+1, 0);
             SelectedObject = NumberPoint;
+            if(ui->pushButton_start->text()!="Остановить")
+            {
+               ui->pushButton_start->setText(QString("Запустить с точки %1").arg(SelectedObject));
+            }
+
             setFocus(); // в конструкторе или при необходимости
             setFocusPolicy(Qt::StrongFocus); // установите политику фокуса
 
@@ -720,15 +815,18 @@ void MainWindow::AddNewPoint(uint16_t NumberPoint)
 
     });
     connect(handler, &MouseClickHandler:: rightClicked,
-                 [=](const QPoint &pos) {
+                 [=]() {
 
                  setStyle(0, NumberPoint+1, 0);
-
+                 if(ui->pushButton_start->text()!="Остановить")
+                 {
+                    ui->pushButton_start->setText(QString("Запустить"));
+                 }
                  SelectedObject=NoSelected;
 //             }
          });
     connect(handler, &MouseClickHandler:: leftClicked,
-                 [=](const QPoint &pos) {
+                 [=]() {
         setFocus(); // в конструкторе или при необходимости
         setFocusPolicy(Qt::StrongFocus); // установите политику фокуса
          });
@@ -812,7 +910,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
     switch (key) {
     case Qt::Key_Up:
     {
-        if(SelectedObject>0)
+        if(SelectedObject>0 && SelectedObject>CurrentRegime)
         {
             isertRow(SelectedObject, SelectedObject-1);
             setStyle(0, SelectedObject+1, 0);

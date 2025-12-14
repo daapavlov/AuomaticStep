@@ -10,6 +10,7 @@
 #include <QMouseEvent>
 #include <QKeyEvent>
 #include <filedialog.h>
+#include "audioplayer.h"
 
 
 QT_BEGIN_NAMESPACE
@@ -32,6 +33,12 @@ public:
 private:
     Ui::MainWindow *ui;
 
+    AudioPlayer *m_player = new AudioPlayer(this);
+    QString path_music_1 = QDir::currentPath()+"/music/music_1.mp3";
+    QString path_music_2 = QDir::currentPath()+"/music/music_2.mp3";
+
+    AudioPlayer *audio_spinBoxRud = new AudioPlayer();
+
     QCustomPlot *m_customPlot = new QCustomPlot();
     QVector <double>  DataChartX, DataChartY;
     // Элементы для отображения при наведении
@@ -41,10 +48,11 @@ private:
     QTimer *timer_modeMessage = new QTimer();
     QTimer *timer_sendRUD = nullptr;
     QTimer timer_readPointMode;
+
     QThread *threadFile = new QThread();//Создаем новый поток
 //    MouseClickHandler *handler;
 
-    uint16_t NumberPointMode=0;
+    int NumberPointMode=0;
     int CurrentRegime=0;
     bool sendData_RUD=0;
     struct PointMode
@@ -77,6 +85,8 @@ private:
     fileDialog *m_fileDialog = new fileDialog();
 
     int SelectedObject=NoSelected;
+    int BufferSelected=NoSelected;
+    int timeTheEnd=0;//оставшееся время при постановке на паузу
 
     void AddNewPoint(uint16_t NumberPoint);
     void CollbackButtonAddPoint();
@@ -104,6 +114,7 @@ private:
     void removeRow(QGridLayout *grid, int Row);
     void isertRow(int NumberPoint, int newRow);
     void setStyle(bool action, int row, int column);
+    void PlayerMusic(QString path);
 
 private slots:
     void AddPointToChrts();
@@ -111,6 +122,7 @@ private slots:
     void Mode_timeout();
     void Mode_stop();
     void Mode_start();
+    void Mode_pause();
     void Mode_MessageTheEnd();
     void OpenProject();
     void SaveProject();

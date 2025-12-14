@@ -34,7 +34,7 @@
            <x>0</x>
            <y>0</y>
            <width>952</width>
-           <height>590</height>
+           <height>600</height>
           </rect>
          </property>
         </widget>
@@ -85,8 +85,8 @@
             <rect>
              <x>0</x>
              <y>0</y>
-             <width>527</width>
-             <height>278</height>
+             <width>531</width>
+             <height>292</height>
             </rect>
            </property>
            <layout class="QVBoxLayout" name="verticalLayout">
@@ -216,6 +216,13 @@
             </widget>
            </item>
            <item>
+            <widget class="QPushButton" name="pushButton_pause">
+             <property name="text">
+              <string>Пауза</string>
+             </property>
+            </widget>
+           </item>
+           <item>
             <spacer name="horizontalSpacer">
              <property name="orientation">
               <enum>Qt::Horizontal</enum>
@@ -301,7 +308,7 @@
      <x>0</x>
      <y>0</y>
      <width>1530</width>
-     <height>26</height>
+     <height>21</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_file">
